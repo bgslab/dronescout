@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DroneScout - Aerial Photography Planning</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #1a2a6c 0%, #0f1b4d 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .app-container {
+            max-width: 480px;
+            margin: 0 auto;
+            background: #f5f7fa;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .nav-tabs {
+            display: flex;
+            background: white;
+            border-bottom: 2px solid #e0e6ed;
+            overflow-x: auto;
+        }
+
+        .nav-tab {
+            flex: 1;
+            padding: 15px;
+            background: none;
+            border: none;
+            color: #666;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+            white-space: nowrap;
+            min-width: fit-content;
+        }
+
+        .nav-tab.active {
+            color: #00d4ff;
+            border-bottom-color: #00d4ff;
+        }
+
+        .tab-badge {
+            font-size: 11px;
+            margin-left: 4px;
+            opacity: 0.7;
+        }
+
+        .content {
+            padding: 20px;
+            padding-bottom: 80px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .input-group input,
+        .input-group select,
+        .input-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e6ed;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: border-color 0.3s;
+            font-family: inherit;
+        }
+
+        .input-group input:focus,
+        .input-group select:focus,
+        .input-group textarea:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            box-shadow: 0 4px 12px rgba(0, 212, 255, 0.3);
+        }
+
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            width: 100%;
+            padding: 12px;
+            background: white;
+            color: #1e3c72;
+            border: 2px solid #1e3c72;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        /* Settings Tab Styles */
+        .settings-section {
+            margin-bottom: 20px;
+        }
+
+        .settings-section-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e3c72;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e0e6ed;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: #f0f5fa;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background: #28a745;
+        }
+
+        .status-indicator.error {
+            background: #dc3545;
+            animation: none;
+        }
+
+        .status-indicator.checking {
+            background: #ffc107;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .status-text {
+            flex: 1;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .status-text strong {
+            color: #333;
+        }
+
+        .advanced-toggle {
+            background: white;
+            border: 2px solid #e0e6ed;
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+
+        .advanced-toggle:hover {
+            border-color: #00d4ff;
+        }
+
+        .advanced-toggle.open {
+            background: #f0f5fa;
+            border-color: #00d4ff;
+        }
+
+        .advanced-content {
+            display: none;
+            padding: 15px;
+            background: #f9fafb;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #00d4ff;
+        }
+
+        .advanced-content.open {
+            display: block;
+        }
+
+        .sync-info {
+            font-size: 13px;
+            color: #666;
+            padding: 12px;
+            background: #f0f5fa;
+            border-radius: 8px;
+            border-left: 4px solid #00d4ff;
+        }
+
+        /* History Tab Styles */
+        .flight-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 1px solid #e0e6ed;
+        }
+
+        .flight-header {
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            gap: 10px;
+        }
+
+        .flight-info {
+            flex: 1;
+        }
+
+        .flight-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1e3c72;
+            margin-bottom: 4px;
+        }
+
+        .flight-date {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .flight-meta {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .flight-meta span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .flight-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .badge-manual {
+            background: #e7f3ff;
+            color: #0056b3;
+        }
+
+        .badge-synced {
+            background: #e8f5e9;
+            color: #1b5e20;
+        }
+
+        .flight-body {
+            border-top: 1px solid #e0e6ed;
+            padding: 15px;
+        }
+
+        .flight-body.hidden {
+            display: none;
+        }
+
+        .thumbnail-gallery {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .thumbnail {
+            aspect-ratio: 1;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            background: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            transition: transform 0.2s;
+        }
+
+        .thumbnail:hover {
+            transform: scale(1.05);
+        }
+
+        .thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .thumbnail-placeholder {
+            font-size: 24px;
+        }
+
+        .media-links {
+            margin-bottom: 15px;
+            padding: 12px;
+            background: #f9fafb;
+            border-radius: 8px;
+        }
+
+        .media-link {
+            display: inline-block;
+            padding: 6px 12px;
+            background: #e8f4f8;
+            color: #0099cc;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            transition: all 0.2s;
+        }
+
+        .media-link:hover {
+            background: #00d4ff;
+            color: white;
+        }
+
+        .notes-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #e0e6ed;
+            border-radius: 6px;
+            font-size: 13px;
+            resize: vertical;
+            min-height: 60px;
+            font-family: inherit;
+        }
+
+        .notes-input:focus {
+            outline: none;
+            border-color: #00d4ff;
+            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+        }
+
+        .notes-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .notes-save-hint {
+            font-size: 11px;
+            color: #999;
+            margin-top: 6px;
+        }
+
+        .expand-toggle {
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            font-size: 14px;
+            color: #00d4ff;
+            font-weight: 600;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+            opacity: 0.5;
+        }
+
+        .empty-state-text {
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #00d4ff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .sync-message {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sync-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .sync-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .sync-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .sync-button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .sync-button-group .btn-primary {
+            margin: 0;
+        }
+
+        .btn-small {
+            flex: 1;
+            padding: 10px;
+            font-size: 13px;
+        }
+
+        /* Lightbox */
+        .lightbox {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            animation: fadeIn 0.2s;
+        }
+
+        .lightbox.open {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .lightbox-content {
+            max-width: 90%;
+            max-height: 90%;
+            position: relative;
+            animation: slideUp 0.3s;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .lightbox-image,
+        .lightbox-video {
+            max-width: 100%;
+            max-height: 80vh;
+            border-radius: 8px;
+        }
+
+        .lightbox-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            font-size: 28px;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .lightbox-close:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .app-container {
+                max-width: 100%;
+            }
+
+            .nav-tab {
+                font-size: 13px;
+                padding: 12px;
+            }
+
+            .content {
+                padding: 15px;
+            }
+
+            .card {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+    <div id="lightbox" class="lightbox">
+        <div class="lightbox-content">
+            <button class="lightbox-close" id="lightboxClose">&times;</button>
+            <div id="lightboxMedia"></div>
+        </div>
+    </div>
+
+    <script>
+        // Drone profile
+        const DRONE_PROFILE = {
+            model: 'Skydio X10',
+            nightsense: true,
+            obstacleAvoidance: 'best-in-class',
+            autonomy: 'advanced',
+            maxAltitude: 400,
+            bvlos: true
+        };
+
+        // Demo spots (same as v3)
+        const DEMO_SPOTS = [
+            {
+                id: 1,
+                name: "Constitution Trail Sunset",
+                location: "Constitution Trail, Normal, IL",
+                distance: "2.3 miles",
+                description: "Popular multi-use trail with beautiful tree canopies and open prairie sections.",
+                coordinates: { lat: 40.5142, lng: -88.9906 },
+                imageUrl: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&q=80",
+                flightInstructions: "Launch from Kerrick Rd parking area. Fly heading 180° (south) following trail.",
+                bestTime: "Golden hour (1 hour before sunset)",
+                x10Advantage: "X10's obstacle avoidance excels in tree-lined sections.",
+                tags: ["Scenic Trail", "Golden Hour", "Nature"],
+                shotTypes: { landscape: 95, cityscape: 10, nature: 90, architecture: 15 },
+                riskScore: 90,
+                riskStatus: "go",
+                riskBreakdown: {
+                    weather: { score: 90, status: "Excellent conditions", maxScore: 100 },
+                    airspace: { score: 95, status: "Class G uncontrolled airspace", maxScore: 100 },
+                    obstacles: { score: 90, status: "X10 handles easily", maxScore: 100, x10Boost: 15 },
+                    legal: { score: 100, status: "No local restrictions", maxScore: 100 },
+                    privacy: { score: 80, status: "Low traffic expected", maxScore: 100 },
+                    emergency: { score: 95, status: "Multiple landing zones", maxScore: 100, x10Boost: 5 }
+                },
+                weather: { temp: 72, wind: 8, visibility: 10, conditions: "Clear" },
+                airspaceDetails: {
+                    class: "G",
+                    ceiling: "Unlimited (below 400 ft AGL)",
+                    controllingAgency: "None",
+                    laancRequired: false,
+                    gridSystem: "Outside controlled grid",
+                    nearestAirport: "Central Illinois Regional Airport (BMI) - 5.2 miles"
+                },
+                hazards: [
+                    { type: "Natural", description: "Tall trees - maintain 150+ ft altitude", severity: "Low" },
+                    { type: "Infrastructure", description: "Occasional power lines", severity: "Medium" }
+                ],
+                regulations: [
+                    { authority: "Town of Normal", rule: "No specific drone restrictions", compliant: true },
+                    { authority: "Illinois State", rule: "Part 107 compliance required", compliant: true }
+                ]
+            }
+        ];
+
+        // App state
+        const state = {
+            activeTab: 'planner',
+            selectedSpot: null,
+            searchLocation: '',
+            routeStart: '',
+            routeEnd: '',
+            currentLocation: null,
+            loadingLocation: false,
+            spots: [],
+            plannerMode: 'auto',
+            preferences: { cityscape: 30, nature: 70, architecture: 40 },
+            showPreferences: false,
+            
+            // New: Cloud sync
+            flights: [],
+            syncSettings: {
+                workerUrl: 'https://dronescout-proxy.dronescout-api.workers.dev',
+                lastSync: null,
+                lastSyncStatus: null,
+                connectionStatus: 'checking'
+            },
+            expandedFlight: null,
+            syncMessage: null,
+            map: null
+        };
+
+        // Load state from localStorage
+        function loadState() {
+            const saved = localStorage.getItem('droneScoutState');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                state.flights = parsed.flights || [];
+                state.syncSettings = { ...state.syncSettings, ...parsed.syncSettings };
+            }
+        }
+
+        // Save state to localStorage
+        function saveState() {
+            localStorage.setItem('droneScoutState', JSON.stringify({
+                flights: state.flights,
+                syncSettings: state.syncSettings
+            }));
+        }
+
+        // Check Worker connection
+        async function checkConnection() {
+            try {
+                state.syncSettings.connectionStatus = 'checking';
+                const response = await fetch(state.syncSettings.workerUrl + '/sync-flights', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                state.syncSettings.connectionStatus = response.ok ? 'connected' : 'error';
+            } catch (error) {
+                state.syncSettings.connectionStatus = 'error';
+            }
+        }
+
+        // Sync flights from Skydio Cloud
+        async function syncFlights() {
+            try {
+                state.syncMessage = { type: 'info', text: 'Syncing...' };
+                render();
+
+                const response = await fetch(state.syncSettings.workerUrl + '/sync-flights', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) throw new Error('Sync failed');
+
+                const data = await response.json();
+
+                // Process synced flights
+                if (data.flights && Array.isArray(data.flights)) {
+                    data.flights.forEach(flight => {
+                        const existingIndex = state.flights.findIndex(f => f.id === flight.id && f.type === 'synced');
+                        const processedFlight = {
+                            id: flight.id,
+                            type: 'synced',
+                            name: flight.name || `Flight ${new Date(flight.created_at).toLocaleDateString()}`,
+                            date: flight.created_at,
+                            duration: flight.duration_seconds,
+                            location: null,
+                            notes: '',
+                            mediaUrls: flight.media_urls || [],
+                            thumbnails: (flight.media_urls || []).slice(0, 3),
+                            syncedAt: new Date().toISOString()
+                        };
+
+                        if (existingIndex >= 0) {
+                            // Preserve user notes
+                            processedFlight.notes = state.flights[existingIndex].notes || '';
+                            state.flights[existingIndex] = processedFlight;
+                        } else {
+                            state.flights.unshift(processedFlight);
+                        }
+                    });
+                }
+
+                state.syncSettings.lastSync = new Date().toISOString();
+                state.syncSettings.lastSyncStatus = 'success';
+                state.syncSettings.connectionStatus = 'connected';
+                state.syncMessage = { type: 'success', text: `Synced ${data.flights ? data.flights.length : 0} flights from Skydio Cloud` };
+                saveState();
+                render();
+            } catch (error) {
+                state.syncSettings.connectionStatus = 'error';
+                state.syncSettings.lastSyncStatus = 'error';
+                state.syncMessage = { type: 'error', text: 'Failed to sync. Check Worker URL and connection.' };
+                render();
+            }
+        }
+
+        // Update flight notes
+        function updateFlightNote(flightId, notes) {
+            const flight = state.flights.find(f => f.id === flightId);
+            if (flight) {
+                flight.notes = notes;
+                saveState();
+            }
+        }
+
+        // Format date/time
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Get connection status display
+        function getStatusDisplay() {
+            if (state.syncSettings.connectionStatus === 'connected') {
+                return { icon: '🟢', text: 'Connected', class: 'connected' };
+            } else if (state.syncSettings.connectionStatus === 'checking') {
+                return { icon: '🟡', text: 'Checking...', class: 'checking' };
+            } else {
+                return { icon: '🔴', text: 'Not Connected', class: 'error' };
+            }
+        }
+
+        // Render
+        function render() {
+            const app = document.getElementById('app');
+            
+            if (state.selectedSpot) {
+                app.innerHTML = renderSpotDetail(state.selectedSpot);
+                attachSpotDetailListeners();
+            } else {
+                app.innerHTML = renderMain();
+                attachMainListeners();
+            }
+        }
+
+        function renderMain() {
+            const status = getStatusDisplay();
+            return `
+                <div class="app-container">
+                    <div class="header">
+                        <h1>DroneScout</h1>
+                        <p>Plan • Assess • Fly • Track</p>
+                    </div>
+
+                    <div class="nav-tabs">
+                        <button class="nav-tab ${state.activeTab === 'planner' ? 'active' : ''}" data-tab="planner">
+                            Trip Planner
+                        </button>
+                        <button class="nav-tab ${state.activeTab === 'history' ? 'active' : ''}" data-tab="history">
+                            History <span class="tab-badge">${status.icon}</span>
+                        </button>
+                        <button class="nav-tab ${state.activeTab === 'settings' ? 'active' : ''}" data-tab="settings">
+                            Settings
+                        </button>
+                    </div>
+
+                    <div class="content">
+                        ${state.activeTab === 'planner' ? renderPlanner() : state.activeTab === 'history' ? renderHistory() : renderSettings()}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPlanner() {
+            let content = `
+                <div class="drone-profile" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 15px; border-radius: 8px; margin-bottom: 15px; font-size: 13px;">
+                    <div style="font-weight: 700; font-size: 14px; margin-bottom: 6px;">🚁 ${DRONE_PROFILE.model} Optimized</div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        ${DRONE_PROFILE.nightsense ? '<div style="background: rgba(255, 255, 255, 0.2); padding: 4px 8px; border-radius: 4px; font-size: 11px;">🌙 Nightsense</div>' : ''}
+                        ${DRONE_PROFILE.obstacleAvoidance === 'best-in-class' ? '<div style="background: rgba(255, 255, 255, 0.2); padding: 4px 8px; border-radius: 4px; font-size: 11px;">🛡️ Elite Avoidance</div>' : ''}
+                        ${DRONE_PROFILE.autonomy === 'advanced' ? '<div style="background: rgba(255, 255, 255, 0.2); padding: 4px 8px; border-radius: 4px; font-size: 11px;">🤖 Advanced Autonomy</div>' : ''}
+                        ${DRONE_PROFILE.bvlos ? '<div style="background: rgba(255, 255, 255, 0.2); padding: 4px 8px; border-radius: 4px; font-size: 11px;">📡 BVLOS Certified</div>' : ''}
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                        <button class="toggle-btn ${state.plannerMode === 'auto' ? 'active' : ''}" data-mode="auto" style="flex: 1; padding: 10px; background: ${state.plannerMode === 'auto' ? '#00d4ff' : 'white'}; color: ${state.plannerMode === 'auto' ? 'white' : '#666'}; border: 2px solid ${state.plannerMode === 'auto' ? '#00d4ff' : '#e0e6ed'}; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.3s;">
+                            Auto Recommend
+                        </button>
+                        <button class="toggle-btn ${state.plannerMode === 'route' ? 'active' : ''}" data-mode="route" style="flex: 1; padding: 10px; background: ${state.plannerMode === 'route' ? '#00d4ff' : 'white'}; color: ${state.plannerMode === 'route' ? 'white' : '#666'}; border: 2px solid ${state.plannerMode === 'route' ? '#00d4ff' : '#e0e6ed'}; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.3s;">
+                            Route Mode
+                        </button>
+                    </div>
+
+                    ${state.plannerMode === 'auto' ? `
+                        <div class="input-group">
+                            <label>Destination</label>
+                            <input type="text" id="searchLocation" placeholder="Airport, hotel, city, or address" value="${state.searchLocation}">
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn-primary" id="searchBtn" style="flex: 2; margin: 0;">Find Scenic Spots</button>
+                        </div>
+                    ` : `
+                        <div class="input-group">
+                            <label>Start Location</label>
+                            <input type="text" id="routeStart" placeholder="Hotel, airport, etc." value="${state.routeStart}">
+                        </div>
+                        <div class="input-group">
+                            <label>End Location</label>
+                            <input type="text" id="routeEnd" placeholder="Destination address" value="${state.routeEnd}">
+                        </div>
+                        <button class="btn-primary" id="routeSearchBtn">Find Spots Along Route</button>
+                    `}
+                </div>
+
+                ${state.spots.length > 0 ? `
+                    <div class="map-container" id="spotsMap" style="height: 300px; border-radius: 12px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);"></div>
+                    
+                    <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 15px; color: #1e3c72">Recommended Spots (${state.spots.length})</h2>
+                    ${state.spots.map(spot => `
+                        <div class="spot-card" data-spot-id="${spot.id}" style="background: white; border-radius: 12px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); cursor: pointer;">
+                            <div style="width: 100%; height: 180px; object-fit: cover; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; color: white; font-size: 48px;">📷</div>
+                            <div style="padding: 15px;">
+                                <div style="font-size: 18px; font-weight: 700; color: #1e3c72; margin-bottom: 5px;">${spot.name}</div>
+                                <div style="font-size: 13px; color: #666; margin-bottom: 10px;">${spot.distance}</div>
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div style="padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; background: ${spot.riskStatus === 'go' ? '#d4edda' : '#fff3cd'}; color: ${spot.riskStatus === 'go' ? '#155724' : '#856404'};">
+                                        ${spot.riskStatus === 'go' ? '✓ CLEAR' : '⚠ CAUTION'}
+                                    </div>
+                                    <div style="font-size: 13px; font-weight: 600; color: #1e3c72;">${spot.riskScore}/100</div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                ` : ''}
+            `;
+            return content;
+        }
+
+        function renderHistory() {
+            const status = getStatusDisplay();
+            let content = `
+                <div class="card">
+                    <div class="settings-section-title" style="margin: 0 0 12px 0;">Flight History</div>
+                    
+                    ${state.syncMessage ? `
+                        <div class="sync-message ${state.syncMessage.type}">
+                            ${state.syncMessage.type === 'info' ? '<span class="spinner"></span>' : ''}
+                            ${state.syncMessage.text}
+                        </div>
+                    ` : ''}
+
+                    <div class="connection-status">
+                        <div class="status-indicator ${state.syncSettings.connectionStatus}"></div>
+                        <div class="status-text">
+                            <strong>${status.icon} ${status.text}</strong>
+                            ${state.syncSettings.lastSync ? `<br>Synced: ${formatDate(state.syncSettings.lastSync)}` : ''}
+                        </div>
+                    </div>
+
+                    <button class="btn-primary" id="syncNowBtn" ${state.syncSettings.connectionStatus === 'checking' ? 'disabled' : ''}>
+                        ${state.syncSettings.connectionStatus === 'checking' ? '<span class="spinner"></span> Syncing...' : '☁️ Sync Flights'}
+                    </button>
+                </div>
+
+                ${state.flights.length > 0 ? `
+                    ${state.flights.map(flight => `
+                        <div class="flight-card">
+                            <div class="flight-header">
+                                <div class="flight-info">
+                                    <div class="flight-title">${flight.name}</div>
+                                    <div class="flight-date">${formatDate(flight.date)}</div>
+                                    <div class="flight-meta">
+                                        ${flight.duration ? `<span>⏱️ ${Math.round(flight.duration / 60)}m</span>` : ''}
+                                        ${flight.location ? `<span>📍 ${flight.location}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div class="flight-badge ${flight.type === 'manual' ? 'badge-manual' : 'badge-synced'}">
+                                    ${flight.type === 'manual' ? '✏️ Manual' : '☁️ Synced'}
+                                </div>
+                            </div>
+                            <div class="flight-header" style="padding-top: 0; border-top: 1px solid #e0e6ed;">
+                                <button class="expand-toggle" data-flight-id="${flight.id}">
+                                    ${state.expandedFlight === flight.id ? '▼ Hide Details' : '▶ Show Details'}
+                                </button>
+                            </div>
+                            <div class="flight-body ${state.expandedFlight === flight.id ? '' : 'hidden'}">
+                                ${flight.type === 'synced' && flight.thumbnails && flight.thumbnails.length > 0 ? `
+                                    <div class="thumbnail-gallery">
+                                        ${flight.thumbnails.map((thumb, idx) => `
+                                            <div class="thumbnail" data-url="${flight.mediaUrls[idx]}" data-type="${flight.mediaUrls[idx].includes('video') ? 'video' : 'image'}">
+                                                <div class="thumbnail-placeholder">🖼️</div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                ` : ''}
+
+                                ${flight.type === 'synced' && flight.mediaUrls && flight.mediaUrls.length > 0 ? `
+                                    <div class="media-links">
+                                        ${flight.mediaUrls.map(url => `
+                                            <a href="${url}" target="_blank" class="media-link">
+                                                ${url.includes('video') ? '🎥 Video' : '🖼️ Photo'}
+                                            </a>
+                                        `).join('')}
+                                    </div>
+                                ` : ''}
+
+                                <div>
+                                    <label class="notes-label">Notes</label>
+                                    <textarea class="notes-input" data-flight-id="${flight.id}" placeholder="Add notes about this flight...">${flight.notes || ''}</textarea>
+                                    <div class="notes-save-hint">Auto-saves as you type</div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                ` : `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">☁️</div>
+                        <div class="empty-state-text">
+                            <strong>No flights yet</strong><br>
+                            Sync your Skydio Cloud flights to see them here
+                        </div>
+                    </div>
+                `}
+            `;
+            return content;
+        }
+
+        function renderSettings() {
+            const status = getStatusDisplay();
+            return `
+                <div class="card">
+                    <div class="settings-section">
+                        <div class="settings-section-title">Connection Status</div>
+                        <div class="connection-status">
+                            <div class="status-indicator ${state.syncSettings.connectionStatus}"></div>
+                            <div class="status-text">
+                                <strong>${status.icon} ${status.text}</strong>
+                                ${state.syncSettings.lastSync ? `<br>Last synced: ${formatDate(state.syncSettings.lastSync)}` : '<br>Never synced'}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="settings-section-title">Sync Control</div>
+                        <button class="btn-primary" id="syncSettingsBtn" ${state.syncSettings.connectionStatus === 'checking' ? 'disabled' : ''}>
+                            ${state.syncSettings.connectionStatus === 'checking' ? '<span class="spinner"></span> Checking...' : '☁️ Sync Now'}
+                        </button>
+                        <div class="sync-info">
+                            Manually sync flights from Skydio Cloud. Synced flights appear in the History tab.
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="advanced-toggle" id="advancedToggle">
+                            <span>⚙️ Advanced Settings</span>
+                            <span>▶</span>
+                        </div>
+                        <div class="advanced-content" id="advancedContent">
+                            <div class="input-group">
+                                <label>Worker URL</label>
+                                <input type="text" id="workerUrlInput" placeholder="https://..." value="${state.syncSettings.workerUrl}">
+                            </div>
+                            <div class="sync-info">
+                                Change only if you're self-hosting the Cloudflare Worker. Most users should leave this unchanged.
+                            </div>
+                            <button class="btn-secondary" id="updateWorkerBtn">Update URL</button>
+                            <button class="btn-secondary" id="testConnectionBtn">Test Connection</button>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="settings-section-title">About</div>
+                        <div class="sync-info">
+                            DroneScout v4 • Cloud Sync Enabled<br>
+                            Skydio X10 Optimized<br>
+                            Part 107 Certified
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSpotDetail(spot) {
+            return `
+                <div class="app-container">
+                    <div class="header">
+                        <button id="backBtn" style="background: none; border: none; color: white; font-size: 18px; cursor: pointer; margin-bottom: 10px;">← Back</button>
+                        <h1>${spot.name}</h1>
+                        <p>${spot.location}</p>
+                    </div>
+                    <div class="content">
+                        <div class="card">
+                            <div style="font-size: 48px; text-align: center; margin-bottom: 15px;">📷</div>
+                            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                                <div style="flex: 1;">
+                                    <div style="font-size: 28px; font-weight: 700; color: #1e3c72;">${spot.riskScore}</div>
+                                    <div style="font-size: 12px; color: #666;">Risk Score</div>
+                                </div>
+                                <div style="flex: 1;">
+                                    <div style="padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; background: ${spot.riskStatus === 'go' ? '#d4edda' : '#fff3cd'}; color: ${spot.riskStatus === 'go' ? '#155724' : '#856404'}; display: inline-block;">
+                                        ${spot.riskStatus === 'go' ? '✓ CLEAR TO FLY' : '⚠ FLY WITH CAUTION'}
+                                    </div>
+                                </div>
+                            </div>
+                            <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin-bottom: 12px;">📸 Flight Instructions</h3>
+                            <p style="font-size: 14px; color: #666; line-height: 1.6; margin-bottom: 15px;">${spot.flightInstructions}</p>
+                            <p style="font-size: 14px; color: #666; line-height: 1.6;">Best Time: ${spot.bestTime}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Event listeners
+        function attachMainListeners() {
+            // Tab switching
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.addEventListener('click', (e) => {
+                    state.activeTab = e.currentTarget.dataset.tab;
+                    state.expandedFlight = null;
+                    render();
+                });
+            });
+
+            // Planner mode toggle
+            document.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    state.plannerMode = e.target.dataset.mode;
+                    render();
+                });
+            });
+
+            // Search button
+            const searchBtn = document.getElementById('searchBtn');
+            if (searchBtn) {
+                searchBtn.addEventListener('click', () => {
+                    state.searchLocation = document.getElementById('searchLocation').value;
+                    state.spots = DEMO_SPOTS;
+                    render();
+                    setTimeout(initMap, 100);
+                });
+            }
+
+            // Route search button
+            const routeSearchBtn = document.getElementById('routeSearchBtn');
+            if (routeSearchBtn) {
+                routeSearchBtn.addEventListener('click', () => {
+                    state.routeStart = document.getElementById('routeStart').value;
+                    state.routeEnd = document.getElementById('routeEnd').value;
+                    state.spots = DEMO_SPOTS;
+                    render();
+                    setTimeout(initMap, 100);
+                });
+            }
+
+            // Spot cards
+            document.querySelectorAll('.spot-card').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    const spotId = parseInt(e.currentTarget.dataset.spotId);
+                    state.selectedSpot = DEMO_SPOTS.find(s => s.id === spotId);
+                    render();
+                });
+            });
+
+            // History tab listeners
+            if (state.activeTab === 'history') {
+                const syncNowBtn = document.getElementById('syncNowBtn');
+                if (syncNowBtn) {
+                    syncNowBtn.addEventListener('click', syncFlights);
+                }
+
+                // Flight expand toggles
+                document.querySelectorAll('.expand-toggle').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const flightId = e.currentTarget.dataset.flightId;
+                        state.expandedFlight = state.expandedFlight === flightId ? null : flightId;
+                        render();
+                    });
+                });
+
+                // Notes input (auto-save)
+                document.querySelectorAll('.notes-input').forEach(input => {
+                    input.addEventListener('input', (e) => {
+                        const flightId = e.target.dataset.flightId;
+                        updateFlightNote(flightId, e.target.value);
+                    });
+                });
+
+                // Thumbnails (lightbox)
+                document.querySelectorAll('.thumbnail').forEach(thumb => {
+                    thumb.addEventListener('click', (e) => {
+                        const url = e.currentTarget.dataset.url;
+                        const type = e.currentTarget.dataset.type;
+                        openLightbox(url, type);
+                    });
+                });
+            }
+
+            // Settings tab listeners
+            if (state.activeTab === 'settings') {
+                const advancedToggle = document.getElementById('advancedToggle');
+                const advancedContent = document.getElementById('advancedContent');
+                if (advancedToggle) {
+                    advancedToggle.addEventListener('click', () => {
+                        advancedContent.classList.toggle('open');
+                        advancedToggle.classList.toggle('open');
+                    });
+                }
+
+                const syncSettingsBtn = document.getElementById('syncSettingsBtn');
+                if (syncSettingsBtn) {
+                    syncSettingsBtn.addEventListener('click', syncFlights);
+                }
+
+                const updateWorkerBtn = document.getElementById('updateWorkerBtn');
+                if (updateWorkerBtn) {
+                    updateWorkerBtn.addEventListener('click', () => {
+                        const newUrl = document.getElementById('workerUrlInput').value;
+                        if (newUrl) {
+                            state.syncSettings.workerUrl = newUrl;
+                            saveState();
+                            state.syncMessage = { type: 'success', text: 'Worker URL updated' };
+                            setTimeout(() => {
+                                state.syncMessage = null;
+                                render();
+                            }, 2000);
+                        }
+                    });
+                }
+
+                const testConnectionBtn = document.getElementById('testConnectionBtn');
+                if (testConnectionBtn) {
+                    testConnectionBtn.addEventListener('click', () => {
+                        state.syncMessage = { type: 'info', text: 'Testing connection...' };
+                        render();
+                        checkConnection().then(() => {
+                            state.syncMessage = state.syncSettings.connectionStatus === 'connected' 
+                                ? { type: 'success', text: 'Connection successful!' }
+                                : { type: 'error', text: 'Connection failed. Check URL and try again.' };
+                            setTimeout(() => {
+                                state.syncMessage = null;
+                                render();
+                            }, 2000);
+                        });
+                    });
+                }
+            }
+        }
+
+        function attachSpotDetailListeners() {
+            const backBtn = document.getElementById('backBtn');
+            if (backBtn) {
+                backBtn.addEventListener('click', () => {
+                    state.selectedSpot = null;
+                    render();
+                });
+            }
+        }
+
+        // Lightbox
+        function openLightbox(url, type) {
+            const lightbox = document.getElementById('lightbox');
+            const media = document.getElementById('lightboxMedia');
+            
+            if (type === 'video') {
+                media.innerHTML = `<video class="lightbox-video" controls><source src="${url}"></video>`;
+            } else {
+                media.innerHTML = `<img src="${url}" class="lightbox-image">`;
+            }
+            
+            lightbox.classList.add('open');
+        }
+
+        function closeLightbox() {
+            document.getElementById('lightbox').classList.remove('open');
+        }
+
+        // Map init
+        function initMap() {
+            if (state.spots.length === 0) return;
+            if (typeof L === 'undefined') {
+                console.warn('Leaflet library not loaded, skipping map');
+                return;
+            }
+
+            const container = document.getElementById('spotsMap');
+            if (!container) return;
+
+            try {
+                if (state.map) {
+                    state.map.remove();
+                }
+
+                const center = state.currentLocation || { lat: 40.5, lng: -89 };
+                state.map = L.map(container).setView([center.lat, center.lng], 10);
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap',
+                    maxZoom: 19
+                }).addTo(state.map);
+
+                state.spots.forEach(spot => {
+                    const markerColor = spot.riskStatus === 'go' ? '#28a745' : '#ffc107';
+                    L.circleMarker([spot.coordinates.lat, spot.coordinates.lng], {
+                        radius: 8,
+                        fillColor: markerColor,
+                        color: '#fff',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.8
+                    }).addTo(state.map).bindPopup(`<strong>${spot.name}</strong>`);
+                });
+
+                if (state.spots.length > 0) {
+                    const bounds = L.latLngBounds(state.spots.map(s => [s.coordinates.lat, s.coordinates.lng]));
+                    state.map.fitBounds(bounds, { padding: [50, 50] });
+                }
+            } catch (error) {
+                console.error('Map initialization failed:', error);
+            }
+        }
+
+        // Lightbox close
+        document.getElementById('lightboxClose')?.addEventListener('click', closeLightbox);
+        document.getElementById('lightbox')?.addEventListener('click', (e) => {
+            if (e.target === document.getElementById('lightbox')) closeLightbox();
+        });
+
+        // Init
+        loadState();
+        checkConnection();
+        render();
+    </script>
+</body>
+</html>
