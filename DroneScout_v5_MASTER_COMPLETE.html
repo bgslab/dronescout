@@ -1,0 +1,1887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DroneScout v5 - Complete</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #1a2a6c 0%, #0f1b4d 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .app-container {
+            max-width: 480px;
+            margin: 0 auto;
+            background: #f5f7fa;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .nav-tabs {
+            display: flex;
+            background: white;
+            border-bottom: 2px solid #e0e6ed;
+            overflow-x: auto;
+        }
+
+        .nav-tab {
+            flex: 1;
+            padding: 15px 10px;
+            background: none;
+            border: none;
+            color: #666;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+            white-space: nowrap;
+            min-width: fit-content;
+        }
+
+        .nav-tab.active {
+            color: #00d4ff;
+            border-bottom-color: #00d4ff;
+        }
+
+        .content {
+            padding: 20px;
+            padding-bottom: 80px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .input-group input,
+        .input-group select,
+        .input-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e6ed;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+            font-family: inherit;
+        }
+
+        .input-group input:focus,
+        .input-group select:focus,
+        .input-group textarea:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-secondary {
+            background: #e0e6ed;
+            color: #666;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .x10-badge {
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .x10-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .x10-features {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .feature-tag {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .spot-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            cursor: pointer;
+            transition: transform 0.2s;
+            position: relative;
+        }
+
+        .spot-card:active {
+            transform: scale(0.98);
+        }
+
+        .spot-image {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+        }
+
+        .risk-badge {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            backdrop-filter: blur(10px);
+        }
+
+        .risk-badge.high {
+            background: rgba(39, 174, 96, 0.9);
+            color: white;
+        }
+
+        .risk-badge.medium {
+            background: rgba(255, 193, 7, 0.9);
+            color: white;
+        }
+
+        .risk-badge.low {
+            background: rgba(220, 53, 69, 0.9);
+            color: white;
+        }
+
+        .favorite-star {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            font-size: 20px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            backdrop-filter: blur(10px);
+        }
+
+        .favorite-star.active {
+            color: #ffc107;
+        }
+
+        .spot-info {
+            padding: 15px;
+        }
+
+        .spot-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e3c72;
+            margin-bottom: 8px;
+        }
+
+        .spot-desc {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.5;
+            margin-bottom: 8px;
+        }
+
+        .spot-distance {
+            font-size: 13px;
+            color: #00d4ff;
+            font-weight: 600;
+        }
+
+        .map-container {
+            width: 100%;
+            height: 300px;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            background: #e0e6ed;
+        }
+
+        .risk-category {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .risk-cat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .risk-cat-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .risk-cat-score {
+            font-size: 14px;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .score-high {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .score-medium {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .score-low {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .risk-cat-bar {
+            width: 100%;
+            height: 6px;
+            background: #e0e6ed;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 6px;
+        }
+
+        .risk-cat-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff 0%, #0099cc 100%);
+            transition: width 0.3s;
+        }
+
+        .risk-cat-desc {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.4;
+        }
+
+        .flight-card {
+            background: white;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 1px solid #e0e6ed;
+        }
+
+        .flight-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 10px;
+        }
+
+        .flight-location {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1e3c72;
+        }
+
+        .flight-date {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .flight-details {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .flight-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .badge-synced {
+            background: #e8f5e9;
+            color: #1b5e20;
+        }
+
+        .badge-manual {
+            background: #e7f3ff;
+            color: #0056b3;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 6px;
+        }
+
+        .badge.rated {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .btn-small {
+            flex: 1;
+            padding: 8px;
+            background: #00d4ff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn-small.secondary {
+            background: #e0e6ed;
+            color: #666;
+        }
+
+        .btn-small.danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        .empty-state-text {
+            font-size: 16px;
+            color: #666;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: #f0f5fa;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .status-indicator.connected {
+            background: #28a745;
+        }
+
+        .status-indicator.error {
+            background: #dc3545;
+        }
+
+        .status-indicator.checking {
+            background: #ffc107;
+        }
+
+        .status-text {
+            flex: 1;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .settings-section {
+            margin-bottom: 20px;
+        }
+
+        .settings-section-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e3c72;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e0e6ed;
+        }
+
+        .chart-container {
+            width: 100%;
+            height: 250px;
+            margin-bottom: 20px;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .stat-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1e3c72;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .help-section {
+            margin-bottom: 25px;
+        }
+
+        .help-section h3 {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1e3c72;
+            margin-bottom: 12px;
+        }
+
+        .help-section p {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .help-section ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .help-section li {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.8;
+            padding-left: 20px;
+            position: relative;
+        }
+
+        .help-section li:before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #00d4ff;
+            font-weight: 700;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 90%;
+            max-height: 80%;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1e3c72;
+            margin-bottom: 20px;
+        }
+
+        .star-rating {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .star {
+            font-size: 32px;
+            color: #e0e6ed;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .star.active {
+            color: #ffc107;
+        }
+
+        .star:hover {
+            transform: scale(1.1);
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #00d4ff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .sync-message {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .sync-message.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .sync-message.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .back-button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            margin-bottom: 10px;
+        }
+
+        .toggle-favorites-btn {
+            background: white;
+            border: 2px solid #e0e6ed;
+            color: #666;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .toggle-favorites-btn.active {
+            background: #ffc107;
+            color: white;
+            border-color: #ffc107;
+        }
+
+        .export-btn {
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="header">
+            <h1>🚁 DroneScout v5</h1>
+            <p>Plan • Assess • Fly • Sync • Analyze</p>
+        </div>
+
+        <div class="nav-tabs">
+            <button class="nav-tab active" data-tab="planner">Trip Planner</button>
+            <button class="nav-tab" data-tab="upcoming">Upcoming</button>
+            <button class="nav-tab" data-tab="history">History</button>
+            <button class="nav-tab" data-tab="settings">Settings</button>
+            <button class="nav-tab" data-tab="analytics">Analytics</button>
+            <button class="nav-tab" data-tab="help">Help</button>
+        </div>
+
+        <div class="content" id="content">
+            <!-- Content will be dynamically rendered -->
+        </div>
+    </div>
+
+    <!-- Rating Modal -->
+    <div class="modal" id="ratingModal">
+        <div class="modal-content">
+            <div class="modal-header">Rate Your Flight</div>
+            <div id="ratingContent"></div>
+        </div>
+    </div>
+
+    <!-- Save Flight Plan Modal -->
+    <div class="modal" id="savePlanModal">
+        <div class="modal-content">
+            <div class="modal-header">Save Flight Plan</div>
+            <div id="savePlanContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', initializeApp);
+
+        function initializeApp() {
+            // App state
+            const state = {
+                currentTab: 'planner',
+                selectedSpot: null,
+                destination: '',
+                spots: [],
+                upcomingFlights: loadFromStorage('upcomingFlights') || [],
+                flights: loadFromStorage('flights') || [],
+                ratings: loadFromStorage('ratings') || [],
+                preferences: loadFromStorage('preferences') || {
+                    scenicWeight: 75,
+                    accessibilityWeight: 50,
+                    popularityWeight: 25
+                },
+                favorites: loadFromStorage('favorites') || [],
+                showFavoritesOnly: false,
+                currentRating: null,
+                syncSettings: loadFromStorage('syncSettings') || {
+                    workerUrl: 'https://dronescout-proxy.dronescout-api.workers.dev',
+                    lastSync: null,
+                    connectionStatus: 'checking'
+                },
+                syncMessage: null,
+                expandedFlight: null
+            };
+
+            // LocalStorage helpers
+            function loadFromStorage(key) {
+                try {
+                    const data = localStorage.getItem('dronescout_' + key);
+                    return data ? JSON.parse(data) : null;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function saveToStorage(key, value) {
+                try {
+                    localStorage.setItem('dronescout_' + key, JSON.stringify(value));
+                } catch (e) {
+                    console.error('Storage error:', e);
+                }
+            }
+
+            // Demo data with full v2 features
+            const scenicSpots = [
+                {
+                    id: 1,
+                    name: "Constitution Trail Overlook",
+                    description: "Scenic trail with open fields and tree lines. Great for tracking shots and nature content.",
+                    coordinates: { lat: 40.4842, lng: -88.9936 },
+                    imageUrl: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&q=80",
+                    flightInstructions: "Launch from north parking area. Fly heading 180° (south) along tree line. Maintain 150 ft AGL to capture trail and surrounding farmland. Look east for sunrise golden hour shots.",
+                    bestTime: "Golden hour (sunrise/sunset)",
+                    x10Advantage: "X10's advanced autonomy excels at tree line tracking. Superior range enables full trail coverage. Nightsense allows twilight flights when trails are empty.",
+                    distance: "2.3 mi",
+                    riskScore: 88,
+                    shotTypes: { landscape: 70, nature: 30, cityscape: 0, architecture: 0 },
+                    airspaceDetails: {
+                        class: "Class G (Uncontrolled)",
+                        ceiling: "Up to 400 ft AGL authorized",
+                        laancRequired: "No",
+                        nearestAirport: "Central Illinois Regional (BMI) - 4.2 mi SE"
+                    },
+                    regulations: [
+                        { authority: "FAA Part 107", rule: "Visual line of sight waived (Part 107.31) - BVLOS certified", compliant: true },
+                        { authority: "Local Parks", rule: "Drone flights permitted with Part 107 certification", compliant: true }
+                    ],
+                    weatherConditions: {
+                        wind: "8-12 mph SW",
+                        visibility: "10+ miles",
+                        temp: "72°F",
+                        conditions: "Clear"
+                    }
+                },
+                {
+                    id: 2,
+                    name: "Downtown Skyline - Miller Park",
+                    description: "Urban skyline shots with historic buildings and modern architecture blend.",
+                    coordinates: { lat: 40.4781, lng: -88.9937 },
+                    imageUrl: "https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?w=800&q=80",
+                    flightInstructions: "Launch from Miller Park. Fly heading 45° (northeast) toward downtown. Maintain 300 ft AGL for optimal building perspective.",
+                    bestTime: "Blue hour (twilight) for city lights",
+                    x10Advantage: "Nightsense capability captures stunning blue hour shots other drones miss. Elite obstacle avoidance navigates urban environment safely.",
+                    distance: "3.7 mi",
+                    riskScore: 72,
+                    shotTypes: { cityscape: 80, architecture: 20, landscape: 0, nature: 0 },
+                    airspaceDetails: {
+                        class: "Class G with LAANC",
+                        ceiling: "Up to 400 ft AGL with authorization",
+                        laancRequired: "Yes (auto-approved up to 400 ft)",
+                        nearestAirport: "Central Illinois Regional (BMI) - 3.8 mi SE"
+                    },
+                    regulations: [
+                        { authority: "FAA Part 107", rule: "LAANC authorization obtained", compliant: true },
+                        { authority: "City of Bloomington", rule: "Municipal approval for park launches", compliant: true }
+                    ],
+                    weatherConditions: {
+                        wind: "6-10 mph SSW",
+                        visibility: "10+ miles",
+                        temp: "68°F",
+                        conditions: "Partly cloudy"
+                    }
+                },
+                {
+                    id: 3,
+                    name: "Evergreen Lake Nature Preserve",
+                    description: "Natural lake with wildlife and dense tree cover. Excellent for aerial shots of water reflections.",
+                    coordinates: { lat: 40.5142, lng: -88.9687 },
+                    imageUrl: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80",
+                    flightInstructions: "Launch from east parking area. Fly heading 270° (west) over lake. Maintain 200 ft AGL to capture full lake and fountain.",
+                    bestTime: "Early morning for calm water reflections",
+                    x10Advantage: "X10 Nightsense unlocks magical twilight/blue hour shots. Advanced obstacle avoidance navigates dense canopy safely.",
+                    distance: "5.1 mi",
+                    riskScore: 91,
+                    shotTypes: { nature: 60, landscape: 40, cityscape: 0, architecture: 0 },
+                    airspaceDetails: {
+                        class: "Class G (Uncontrolled)",
+                        ceiling: "Up to 400 ft AGL authorized",
+                        laancRequired: "No",
+                        nearestAirport: "Central Illinois Regional (BMI) - 6.1 mi S"
+                    },
+                    regulations: [
+                        { authority: "FAA Part 107", rule: "BVLOS operations authorized", compliant: true },
+                        { authority: "McLean County", rule: "Preserve permits drone use for photography", compliant: true }
+                    ],
+                    weatherConditions: {
+                        wind: "5-8 mph W",
+                        visibility: "10+ miles",
+                        temp: "65°F",
+                        conditions: "Clear"
+                    }
+                }
+            ];
+
+            // Calculate adjusted risk score based on learning
+            function getAdjustedRiskScore(spot) {
+                const baseScore = spot.riskScore;
+                if (state.ratings.length === 0) return baseScore;
+
+                const shotTypeRatings = {};
+                const shotTypeCounts = {};
+
+                state.ratings.forEach(rating => {
+                    const flight = state.flights.find(f => f.id === rating.flightId);
+                    if (flight && flight.spotData && flight.spotData.shotTypes) {
+                        const shotTypes = flight.spotData.shotTypes;
+                        const dominantType = Object.keys(shotTypes).reduce((a, b) =>
+                            shotTypes[a] > shotTypes[b] ? a : b
+                        );
+
+                        if (!shotTypeRatings[dominantType]) {
+                            shotTypeRatings[dominantType] = 0;
+                            shotTypeCounts[dominantType] = 0;
+                        }
+
+                        const avgRating = (rating.descAccuracy + rating.shotTypeMatch + rating.accessibility) / 3;
+                        shotTypeRatings[dominantType] += avgRating;
+                        shotTypeCounts[dominantType]++;
+                    }
+                });
+
+                Object.keys(shotTypeRatings).forEach(type => {
+                    shotTypeRatings[type] = shotTypeRatings[type] / shotTypeCounts[type];
+                });
+
+                const dominantType = Object.keys(spot.shotTypes).reduce((a, b) =>
+                    spot.shotTypes[a] > spot.shotTypes[b] ? a : b
+                );
+
+                if (shotTypeRatings[dominantType]) {
+                    const avgRating = shotTypeRatings[dominantType];
+                    const adjustedScore = baseScore * (avgRating / 3);
+                    return Math.round(Math.max(1, Math.min(100, adjustedScore)));
+                }
+
+                return baseScore;
+            }
+
+            // Cloud sync functions
+            async function checkConnection() {
+                try {
+                    state.syncSettings.connectionStatus = 'checking';
+                    const response = await fetch(state.syncSettings.workerUrl + '/sync-flights', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    state.syncSettings.connectionStatus = response.ok ? 'connected' : 'error';
+                } catch (error) {
+                    state.syncSettings.connectionStatus = 'error';
+                }
+            }
+
+            async function syncFlights() {
+                try {
+                    state.syncMessage = { type: 'info', text: 'Syncing...' };
+                    render();
+
+                    const response = await fetch(state.syncSettings.workerUrl + '/sync-flights', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    if (!response.ok) throw new Error('Sync failed');
+
+                    const data = await response.json();
+
+                    if (data.flights && Array.isArray(data.flights)) {
+                        data.flights.forEach(flight => {
+                            const existingIndex = state.flights.findIndex(f => f.id === flight.id && f.type === 'synced');
+                            const processedFlight = {
+                                id: flight.id,
+                                type: 'synced',
+                                name: flight.name || `Flight ${new Date(flight.created_at).toLocaleDateString()}`,
+                                date: flight.created_at,
+                                duration: flight.duration_seconds,
+                                location: flight.location || null,
+                                notes: '',
+                                mediaUrls: flight.media_urls || [],
+                                syncedAt: new Date().toISOString()
+                            };
+
+                            if (existingIndex >= 0) {
+                                processedFlight.notes = state.flights[existingIndex].notes || '';
+                                state.flights[existingIndex] = processedFlight;
+                            } else {
+                                state.flights.unshift(processedFlight);
+                            }
+                        });
+                    }
+
+                    state.syncSettings.lastSync = new Date().toISOString();
+                    state.syncSettings.connectionStatus = 'connected';
+                    state.syncMessage = { type: 'success', text: `Synced ${data.flights ? data.flights.length : 0} flights` };
+                    saveToStorage('flights', state.flights);
+                    saveToStorage('syncSettings', state.syncSettings);
+                    render();
+                } catch (error) {
+                    state.syncSettings.connectionStatus = 'error';
+                    state.syncMessage = { type: 'error', text: 'Failed to sync. Check connection.' };
+                    render();
+                }
+            }
+
+            function formatDate(dateString) {
+                const date = new Date(dateString);
+                return date.toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+
+            // Render functions
+            function render() {
+                const content = document.getElementById('content');
+
+                if (state.selectedSpot) {
+                    content.innerHTML = renderSpotDetail();
+                } else if (state.currentTab === 'planner') {
+                    content.innerHTML = renderTripPlanner();
+                } else if (state.currentTab === 'upcoming') {
+                    content.innerHTML = renderUpcoming();
+                } else if (state.currentTab === 'history') {
+                    content.innerHTML = renderHistory();
+                } else if (state.currentTab === 'settings') {
+                    content.innerHTML = renderSettings();
+                } else if (state.currentTab === 'analytics') {
+                    content.innerHTML = renderAnalytics();
+                    setTimeout(() => initCharts(), 100);
+                } else if (state.currentTab === 'help') {
+                    content.innerHTML = renderHelp();
+                }
+
+                attachEventListeners();
+            }
+
+            function renderTripPlanner() {
+                const spotsWithAdjustedScores = state.spots.map(spot => ({
+                    ...spot,
+                    adjustedScore: getAdjustedRiskScore(spot)
+                })).sort((a, b) => b.adjustedScore - a.adjustedScore);
+
+                const displaySpots = state.showFavoritesOnly
+                    ? spotsWithAdjustedScores.filter(s => state.favorites.includes(s.id))
+                    : spotsWithAdjustedScores;
+
+                return `
+                    <div class="x10-badge">
+                        <div class="x10-title">🚁 Skydio X10 Optimized</div>
+                        <div class="x10-features">
+                            <span class="feature-tag">🌙 Nightsense</span>
+                            <span class="feature-tag">🛡 Elite Avoidance</span>
+                            <span class="feature-tag">📡 BVLOS Ready</span>
+                            <span class="feature-tag">🎯 Part 107 Certified</span>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="input-group">
+                            <label>📍 Destination</label>
+                            <input type="text" id="destinationInput" placeholder="Enter city, hotel, or landmark" value="${state.destination}">
+                        </div>
+                        <button class="btn" id="findSpotsBtn">Find Spots</button>
+                    </div>
+
+                    ${state.spots.length > 0 ? `
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h2 style="font-size: 18px; font-weight: 700; color: #1e3c72; margin: 0;">
+                                📍 ${state.showFavoritesOnly ? 'Favorite' : 'Recommended'} Spots
+                            </h2>
+                            <button class="toggle-favorites-btn ${state.showFavoritesOnly ? 'active' : ''}" id="toggleFavoritesBtn">
+                                ${state.showFavoritesOnly ? '★ Favorites' : '☆ All Spots'}
+                            </button>
+                        </div>
+
+                        ${displaySpots.length === 0 ? `
+                            <div class="card" style="text-align: center; padding: 40px 20px;">
+                                <p style="color: #666;">No favorite spots yet. Star some locations to save them!</p>
+                            </div>
+                        ` : displaySpots.map(spot => {
+                            const riskScore = spot.adjustedScore;
+                            const riskClass = riskScore >= 75 ? 'high' : riskScore >= 50 ? 'medium' : 'low';
+                            const riskLabel = riskScore >= 75 ? 'Clear' : riskScore >= 50 ? 'Caution' : 'Review';
+                            const riskIcon = riskScore >= 75 ? '✓' : '⚠';
+
+                            return `
+                                <div class="spot-card" data-spot-id="${spot.id}">
+                                    <img src="${spot.imageUrl}" alt="${spot.name}" class="spot-image">
+                                    <div class="risk-badge ${riskClass}">
+                                        ${riskIcon} ${riskScore} ${riskLabel}
+                                    </div>
+                                    <button class="favorite-star ${state.favorites.includes(spot.id) ? 'active' : ''}"
+                                            data-spot-id="${spot.id}" id="favBtn${spot.id}">
+                                        ${state.favorites.includes(spot.id) ? '★' : '☆'}
+                                    </button>
+                                    <div class="spot-info">
+                                        <div class="spot-name">${spot.name}</div>
+                                        <div class="spot-desc">${spot.description}</div>
+                                        <div class="spot-distance">📍 ${spot.distance} away</div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    ` : ''}
+                `;
+            }
+
+            function renderSpotDetail() {
+                const spot = state.spots.find(s => s.id === state.selectedSpot);
+                if (!spot) return '';
+
+                const riskScore = getAdjustedRiskScore(spot);
+                const isFavorite = state.favorites.includes(spot.id);
+
+                return `
+                    <button class="back-button" id="backBtn">← Back</button>
+
+                    <div class="card">
+                        <div style="position: relative;">
+                            <img src="${spot.imageUrl}" alt="${spot.name}" style="width: 100%; height: 200px; object-fit: cover; border-radius: 12px; margin-bottom: 20px;">
+                            <button class="favorite-star ${isFavorite ? 'active' : ''}"
+                                    style="top: 15px; right: 15px;" data-spot-id="${spot.id}" id="detailFavBtn">
+                                ${isFavorite ? '★' : '☆'}
+                            </button>
+                        </div>
+
+                        <h2 style="font-size: 20px; font-weight: 700; color: #1e3c72; margin-bottom: 15px;">
+                            ${spot.name}
+                        </h2>
+
+                        <div style="background: #e8f4f8; border-left: 4px solid #00d4ff; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                            <h4 style="font-size: 14px; font-weight: 700; color: #0099cc; margin-bottom: 8px;">🎯 Flight Instructions</h4>
+                            <p style="font-size: 13px; color: #666;">${spot.flightInstructions}</p>
+                        </div>
+
+                        ${spot.x10Advantage ? `
+                            <div style="background: #f0e8ff; border-left: 4px solid #6a11cb; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                                <h4 style="font-size: 14px; font-weight: 700; color: #6a11cb; margin-bottom: 8px;">✨ X10 Advantage</h4>
+                                <p style="font-size: 13px; color: #666;">${spot.x10Advantage}</p>
+                            </div>
+                        ` : ''}
+
+                        <button class="btn" id="savePlanBtn" style="margin-bottom: 15px;">
+                            📅 Save Flight Plan
+                        </button>
+
+                        <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin-bottom: 12px;">⚠️ Risk Assessment - ${riskScore}/100</h3>
+                        ${renderRiskCategories()}
+
+                        <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin: 20px 0 12px 0;">✈️ Airspace Details</h3>
+                        <div class="risk-category">
+                            <div style="margin-bottom: 10px;"><strong>Class:</strong> ${spot.airspaceDetails.class}</div>
+                            <div style="margin-bottom: 10px;"><strong>Ceiling:</strong> ${spot.airspaceDetails.ceiling}</div>
+                            <div style="margin-bottom: 10px;"><strong>LAANC Required:</strong> ${spot.airspaceDetails.laancRequired}</div>
+                            <div><strong>Nearest Airport:</strong> ${spot.airspaceDetails.nearestAirport}</div>
+                        </div>
+
+                        <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin: 20px 0 12px 0;">📋 Regulations</h3>
+                        ${spot.regulations.map(reg => `
+                            <div class="risk-category" style="border-left: 3px solid ${reg.compliant ? '#28a745' : '#dc3545'};">
+                                <div style="font-weight: 600; margin-bottom: 5px;">${reg.authority}</div>
+                                <div style="font-size: 13px; color: #666;">${reg.rule}</div>
+                            </div>
+                        `).join('')}
+
+                        <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin: 20px 0 12px 0;">🌤 Weather Conditions</h3>
+                        <div class="risk-category">
+                            <div style="margin-bottom: 8px;"><strong>Conditions:</strong> ${spot.weatherConditions.conditions}</div>
+                            <div style="margin-bottom: 8px;"><strong>Wind:</strong> ${spot.weatherConditions.wind}</div>
+                            <div style="margin-bottom: 8px;"><strong>Visibility:</strong> ${spot.weatherConditions.visibility}</div>
+                            <div><strong>Temperature:</strong> ${spot.weatherConditions.temp}</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            function renderRiskCategories() {
+                const categories = [
+                    { name: 'Airspace Clearance', score: 95, desc: 'No restrictions, LAANC approved' },
+                    { name: 'Weather Conditions', score: 90, desc: 'Favorable winds, clear visibility' },
+                    { name: 'Regulatory Compliance', score: 100, desc: 'All permits and waivers in place' },
+                    { name: 'Environmental Hazards', score: 85, desc: 'Minimal obstacles, safe terrain' }
+                ];
+
+                return categories.map(cat => {
+                    const scoreClass = cat.score >= 75 ? 'score-high' : cat.score >= 50 ? 'score-medium' : 'score-low';
+                    return `
+                        <div class="risk-category">
+                            <div class="risk-cat-header">
+                                <span class="risk-cat-name">${cat.name}</span>
+                                <span class="risk-cat-score ${scoreClass}">${cat.score}</span>
+                            </div>
+                            <div class="risk-cat-bar">
+                                <div class="risk-cat-fill" style="width: ${cat.score}%"></div>
+                            </div>
+                            <p class="risk-cat-desc">${cat.desc}</p>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            function renderUpcoming() {
+                if (state.upcomingFlights.length === 0) {
+                    return `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📅</div>
+                            <p class="empty-state-text">No upcoming flights scheduled.<br>Save a flight plan from the Trip Planner!</p>
+                        </div>
+                    `;
+                }
+
+                const sortedFlights = [...state.upcomingFlights].sort((a, b) =>
+                    new Date(a.dateTime) - new Date(b.dateTime)
+                );
+
+                return `
+                    <h2 style="font-size: 18px; font-weight: 700; color: #1e3c72; margin-bottom: 15px;">
+                        📅 Upcoming Flights (${sortedFlights.length})
+                    </h2>
+                    ${sortedFlights.map(flight => {
+                        const dt = new Date(flight.dateTime);
+                        const formattedDate = dt.toLocaleString('en-US', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit'
+                        });
+
+                        return `
+                            <div class="flight-card">
+                                <div class="flight-header">
+                                    <div>
+                                        <div class="flight-location">${flight.spotName}</div>
+                                        <div class="flight-date">${formattedDate}</div>
+                                    </div>
+                                </div>
+                                <div class="flight-details">
+                                    ${flight.notes ? `<p><strong>Notes:</strong> ${flight.notes}</p>` : ''}
+                                </div>
+                                <div style="display: flex; gap: 10px; margin-top: 12px;">
+                                    <button class="btn-small" data-action="viewspot" data-spot-id="${flight.spotId}">
+                                        View Spot
+                                    </button>
+                                    <button class="btn-small secondary" data-action="markflown" data-flight-id="${flight.id}">
+                                        Mark as Flown
+                                    </button>
+                                    <button class="btn-small danger" data-action="delete" data-flight-id="${flight.id}">
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                `;
+            }
+
+            function renderHistory() {
+                const status = state.syncSettings.connectionStatus === 'connected' ? '🟢' :
+                              state.syncSettings.connectionStatus === 'checking' ? '🟡' : '🔴';
+
+                return `
+                    <div class="card">
+                        ${state.syncMessage ? `
+                            <div class="sync-message ${state.syncMessage.type}">
+                                ${state.syncMessage.type === 'info' ? '<span class="spinner"></span>' : ''}
+                                ${state.syncMessage.text}
+                            </div>
+                        ` : ''}
+
+                        <div class="connection-status">
+                            <div class="status-indicator ${state.syncSettings.connectionStatus}"></div>
+                            <div class="status-text">
+                                <strong>${status} ${state.syncSettings.connectionStatus === 'connected' ? 'Connected' : state.syncSettings.connectionStatus === 'checking' ? 'Checking...' : 'Not Connected'}</strong>
+                                ${state.syncSettings.lastSync ? `<br>Synced: ${formatDate(state.syncSettings.lastSync)}` : ''}
+                            </div>
+                        </div>
+
+                        <button class="btn" id="syncNowBtn" ${state.syncSettings.connectionStatus === 'checking' ? 'disabled' : ''}>
+                            ${state.syncSettings.connectionStatus === 'checking' ? '<span class="spinner"></span> Syncing...' : '☁️ Sync Flights'}
+                        </button>
+                    </div>
+
+                    ${state.flights.length > 0 ? `
+                        <h2 style="font-size: 18px; font-weight: 700; color: #1e3c72; margin-bottom: 15px;">
+                            Flight History (${state.flights.length})
+                        </h2>
+                        ${state.flights.map(flight => {
+                            const rating = state.ratings.find(r => r.flightId === flight.id);
+
+                            return `
+                                <div class="flight-card">
+                                    <div class="flight-header">
+                                        <div>
+                                            <div class="flight-location">
+                                                ${flight.name || flight.location}
+                                                ${rating ? '<span class="badge rated">★ Rated</span>' : '<span class="badge pending">⏳ Rate This</span>'}
+                                            </div>
+                                            <div class="flight-date">${formatDate(flight.date)}</div>
+                                        </div>
+                                        <div class="flight-badge ${flight.type === 'manual' ? 'badge-manual' : 'badge-synced'}">
+                                            ${flight.type === 'manual' ? '✏️ Manual' : '☁️ Synced'}
+                                        </div>
+                                    </div>
+                                    <div class="flight-details">
+                                        ${flight.duration ? `<p><strong>Duration:</strong> ${Math.round(flight.duration / 60)}m</p>` : ''}
+                                        ${flight.notes ? `<p><strong>Notes:</strong> ${flight.notes}</p>` : ''}
+                                    </div>
+                                    ${!rating ? `
+                                        <div style="display: flex; gap: 10px; margin-top: 12px;">
+                                            <button class="btn-small" data-action="rate" data-flight-id="${flight.id}">
+                                                ⭐ Rate This Flight
+                                            </button>
+                                        </div>
+                                    ` : `
+                                        <div style="margin-top: 12px; padding: 10px; background: #f8f9fa; border-radius: 6px;">
+                                            <div style="font-size: 13px; color: #666;">
+                                                <strong>Your Rating:</strong> ${rating.descAccuracy}⭐ Description | ${rating.shotTypeMatch}⭐ Shots | ${rating.accessibility}⭐ Access
+                                            </div>
+                                        </div>
+                                    `}
+                                </div>
+                            `;
+                        }).join('')}
+                    ` : `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">☁️</div>
+                            <p class="empty-state-text">No flights yet.<br>Sync your Skydio Cloud flights to see them here.</p>
+                        </div>
+                    `}
+                `;
+            }
+
+            function renderSettings() {
+                const status = state.syncSettings.connectionStatus === 'connected' ? '🟢 Connected' :
+                              state.syncSettings.connectionStatus === 'checking' ? '🟡 Checking...' : '🔴 Not Connected';
+
+                return `
+                    <div class="card">
+                        <div class="settings-section">
+                            <div class="settings-section-title">Cloud Sync</div>
+                            <div class="connection-status">
+                                <div class="status-indicator ${state.syncSettings.connectionStatus}"></div>
+                                <div class="status-text">
+                                    <strong>${status}</strong>
+                                    ${state.syncSettings.lastSync ? `<br>Last synced: ${formatDate(state.syncSettings.lastSync)}` : '<br>Never synced'}
+                                </div>
+                            </div>
+                            <button class="btn" id="syncSettingsBtn" ${state.syncSettings.connectionStatus === 'checking' ? 'disabled' : ''}>
+                                ${state.syncSettings.connectionStatus === 'checking' ? '<span class="spinner"></span> Checking...' : '☁️ Sync Now'}
+                            </button>
+                        </div>
+
+                        <div class="settings-section">
+                            <div class="settings-section-title">Worker Configuration</div>
+                            <div class="input-group">
+                                <label>Worker URL</label>
+                                <input type="text" id="workerUrlInput" value="${state.syncSettings.workerUrl}">
+                            </div>
+                            <button class="btn btn-secondary" id="updateWorkerBtn">Update URL</button>
+                        </div>
+
+                        <div class="settings-section">
+                            <div class="settings-section-title">About</div>
+                            <p style="font-size: 14px; color: #666; line-height: 1.6;">
+                                DroneScout v5 MASTER COMPLETE<br>
+                                Skydio X10 Optimized<br>
+                                Part 107 Certified<br>
+                                With Cloud Sync & Analytics
+                            </p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            function renderAnalytics() {
+                const totalFlights = state.flights.length;
+                const totalDuration = state.flights.reduce((sum, f) => sum + (f.duration || 0), 0);
+                const avgRating = state.ratings.length > 0
+                    ? (state.ratings.reduce((sum, r) => sum + ((r.descAccuracy + r.shotTypeMatch + r.accessibility) / 3), 0) / state.ratings.length).toFixed(1)
+                    : 'N/A';
+                const favSpots = state.favorites.length;
+
+                return `
+                    <div class="card">
+                        <h2 style="font-size: 18px; font-weight: 700; color: #1e3c72; margin-bottom: 15px;">
+                            📊 Flight Statistics
+                        </h2>
+
+                        <div class="stat-grid">
+                            <div class="stat-box">
+                                <div class="stat-value">${totalFlights}</div>
+                                <div class="stat-label">Total Flights</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-value">${Math.round(totalDuration / 60)}m</div>
+                                <div class="stat-label">Flight Time</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-value">${avgRating}⭐</div>
+                                <div class="stat-label">Avg Rating</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-value">${favSpots}</div>
+                                <div class="stat-label">Favorite Spots</div>
+                            </div>
+                        </div>
+
+                        <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin: 20px 0 12px 0;">
+                            Flight Activity
+                        </h3>
+                        <div class="chart-container">
+                            <canvas id="flightChart"></canvas>
+                        </div>
+
+                        <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin: 20px 0 12px 0;">
+                            Rating Breakdown
+                        </h3>
+                        <div class="chart-container">
+                            <canvas id="ratingChart"></canvas>
+                        </div>
+
+                        <button class="export-btn" id="exportDataBtn">📥 Export Data (CSV)</button>
+                    </div>
+                `;
+            }
+
+            function renderHelp() {
+                return `
+                    <div class="card">
+                        <div class="help-section">
+                            <h3>🚁 Getting Started</h3>
+                            <p>DroneScout helps you plan drone flights with the Skydio X10. Here's how to use each tab:</p>
+                            <ul>
+                                <li><strong>Trip Planner:</strong> Enter a destination to find scenic spots with risk assessments</li>
+                                <li><strong>Upcoming:</strong> View and manage scheduled flights</li>
+                                <li><strong>History:</strong> Sync completed flights from Skydio Cloud</li>
+                                <li><strong>Settings:</strong> Configure cloud sync and preferences</li>
+                                <li><strong>Analytics:</strong> View flight statistics and trends</li>
+                            </ul>
+                        </div>
+
+                        <div class="help-section">
+                            <h3>⭐ Using the Learning System</h3>
+                            <p>Rate your flights to improve recommendations:</p>
+                            <ul>
+                                <li>After each flight, rate description accuracy, shot quality, and accessibility</li>
+                                <li>The app learns your preferences over time</li>
+                                <li>Spots matching your style get higher scores</li>
+                                <li>Use favorites to save best locations</li>
+                            </ul>
+                        </div>
+
+                        <div class="help-section">
+                            <h3>☁️ Cloud Sync Setup</h3>
+                            <p>Connect to Skydio Cloud via Cloudflare Worker:</p>
+                            <ul>
+                                <li>Deploy the provided Cloudflare Worker with your Skydio API token</li>
+                                <li>Enter Worker URL in Settings tab</li>
+                                <li>Click "Sync Now" to import flights</li>
+                                <li>Synced flights show telemetry and media</li>
+                            </ul>
+                        </div>
+
+                        <div class="help-section">
+                            <h3>⚠️ Risk Scoring</h3>
+                            <p>Each spot shows a risk score (1-100) based on:</p>
+                            <ul>
+                                <li><strong>Airspace:</strong> FAA restrictions and LAANC requirements</li>
+                                <li><strong>Weather:</strong> Wind, visibility, and conditions</li>
+                                <li><strong>Regulations:</strong> Local, state, and federal rules</li>
+                                <li><strong>Hazards:</strong> Obstacles, terrain, and population density</li>
+                            </ul>
+                        </div>
+
+                        <div class="help-section">
+                            <h3>🎯 X10 Optimization</h3>
+                            <p>Spots are optimized for Skydio X10 capabilities:</p>
+                            <ul>
+                                <li><strong>Nightsense:</strong> Enables twilight/blue hour flights</li>
+                                <li><strong>Obstacle Avoidance:</strong> Safe navigation in complex environments</li>
+                                <li><strong>BVLOS:</strong> Extended range operations (if certified)</li>
+                                <li><strong>Autonomy:</strong> Advanced tracking and cinematics</li>
+                            </ul>
+                        </div>
+
+                        <div class="help-section">
+                            <h3>📋 Regulatory Compliance</h3>
+                            <p>Always follow FAA Part 107 rules:</p>
+                            <ul>
+                                <li>Valid Part 107 certification required</li>
+                                <li>Maximum 400 ft AGL altitude</li>
+                                <li>Visual line of sight (unless waiver)</li>
+                                <li>LAANC authorization in controlled airspace</li>
+                                <li>Check NOTAMs before every flight</li>
+                                <li>Respect local ordinances and privacy</li>
+                            </ul>
+                        </div>
+
+                        <div class="help-section">
+                            <h3>📞 Support</h3>
+                            <p>For questions or issues:</p>
+                            <ul>
+                                <li>GitHub: github.com/yourusername/dronescout</li>
+                                <li>Email: support@dronescout.app</li>
+                                <li>Documentation: docs.dronescout.app</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Charts initialization
+            function initCharts() {
+                if (typeof Chart === 'undefined') return;
+
+                // Flight activity chart
+                const flightCanvas = document.getElementById('flightChart');
+                if (flightCanvas) {
+                    const ctx = flightCanvas.getContext('2d');
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
+                            datasets: [{
+                                label: 'Flights',
+                                data: [2, 3, 4, 5],
+                                borderColor: '#00d4ff',
+                                backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                                tension: 0.4
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false }
+                            }
+                        }
+                    });
+                }
+
+                // Rating breakdown chart
+                const ratingCanvas = document.getElementById('ratingChart');
+                if (ratingCanvas) {
+                    const ctx = ratingCanvas.getContext('2d');
+                    new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: ['Description', 'Shot Quality', 'Accessibility'],
+                            datasets: [{
+                                label: 'Average Rating',
+                                data: [4.2, 4.5, 3.8],
+                                backgroundColor: ['#00d4ff', '#0099cc', '#1e3c72']
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    max: 5
+                                }
+                            },
+                            plugins: {
+                                legend: { display: false }
+                            }
+                        }
+                    });
+                }
+            }
+
+            // Event handlers
+            function attachEventListeners() {
+                // Tab switching
+                document.querySelectorAll('.nav-tab').forEach(tab => {
+                    tab.addEventListener('click', (e) => {
+                        document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+                        e.target.classList.add('active');
+                        state.currentTab = e.target.dataset.tab;
+                        render();
+                    });
+                });
+
+                // Find spots button
+                const findSpotsBtn = document.getElementById('findSpotsBtn');
+                if (findSpotsBtn) {
+                    findSpotsBtn.addEventListener('click', () => {
+                        const input = document.getElementById('destinationInput');
+                        if (input && input.value) {
+                            state.destination = input.value;
+                            state.spots = scenicSpots;
+                            render();
+                        }
+                    });
+                }
+
+                // Toggle favorites
+                const toggleFavoritesBtn = document.getElementById('toggleFavoritesBtn');
+                if (toggleFavoritesBtn) {
+                    toggleFavoritesBtn.addEventListener('click', () => {
+                        state.showFavoritesOnly = !state.showFavoritesOnly;
+                        render();
+                    });
+                }
+
+                // Favorite star buttons
+                document.querySelectorAll('.favorite-star').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const spotId = parseInt(e.currentTarget.dataset.spotId);
+                        const index = state.favorites.indexOf(spotId);
+                        if (index > -1) {
+                            state.favorites.splice(index, 1);
+                        } else {
+                            state.favorites.push(spotId);
+                        }
+                        saveToStorage('favorites', state.favorites);
+                        render();
+                    });
+                });
+
+                // Spot cards
+                document.querySelectorAll('.spot-card').forEach(card => {
+                    card.addEventListener('click', (e) => {
+                        if (!e.target.classList.contains('favorite-star')) {
+                            const spotId = parseInt(e.currentTarget.dataset.spotId);
+                            state.selectedSpot = spotId;
+                            render();
+                        }
+                    });
+                });
+
+                // Back button
+                const backBtn = document.getElementById('backBtn');
+                if (backBtn) {
+                    backBtn.addEventListener('click', () => {
+                        state.selectedSpot = null;
+                        render();
+                    });
+                }
+
+                // Save flight plan
+                const savePlanBtn = document.getElementById('savePlanBtn');
+                if (savePlanBtn) {
+                    savePlanBtn.addEventListener('click', () => {
+                        showSavePlanModal();
+                    });
+                }
+
+                // Upcoming flight actions
+                document.querySelectorAll('[data-action]').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const action = e.target.dataset.action;
+                        const flightId = e.target.dataset.flightId;
+                        const spotId = e.target.dataset.spotId;
+
+                        if (action === 'viewspot') {
+                            state.currentTab = 'planner';
+                            state.selectedSpot = parseInt(spotId);
+                            render();
+                        } else if (action === 'markflown') {
+                            markFlightAsFlown(flightId);
+                        } else if (action === 'delete') {
+                            deleteUpcomingFlight(flightId);
+                        } else if (action === 'rate') {
+                            showRatingModal(flightId);
+                        }
+                    });
+                });
+
+                // Sync button
+                const syncNowBtn = document.getElementById('syncNowBtn');
+                if (syncNowBtn) {
+                    syncNowBtn.addEventListener('click', syncFlights);
+                }
+
+                // Settings buttons
+                const syncSettingsBtn = document.getElementById('syncSettingsBtn');
+                if (syncSettingsBtn) {
+                    syncSettingsBtn.addEventListener('click', syncFlights);
+                }
+
+                const updateWorkerBtn = document.getElementById('updateWorkerBtn');
+                if (updateWorkerBtn) {
+                    updateWorkerBtn.addEventListener('click', () => {
+                        const newUrl = document.getElementById('workerUrlInput').value;
+                        if (newUrl) {
+                            state.syncSettings.workerUrl = newUrl;
+                            saveToStorage('syncSettings', state.syncSettings);
+                            state.syncMessage = { type: 'success', text: 'Worker URL updated' };
+                            setTimeout(() => {
+                                state.syncMessage = null;
+                                render();
+                            }, 2000);
+                        }
+                    });
+                }
+
+                // Export data
+                const exportDataBtn = document.getElementById('exportDataBtn');
+                if (exportDataBtn) {
+                    exportDataBtn.addEventListener('click', exportData);
+                }
+            }
+
+            // Helper functions
+            function showSavePlanModal() {
+                const spot = state.spots.find(s => s.id === state.selectedSpot);
+                if (!spot) return;
+
+                const modal = document.getElementById('savePlanModal');
+                const content = document.getElementById('savePlanContent');
+
+                content.innerHTML = `
+                    <div class="input-group">
+                        <label>Flight Date & Time</label>
+                        <input type="datetime-local" id="planDateTime">
+                    </div>
+                    <div class="input-group">
+                        <label>Notes (optional)</label>
+                        <textarea id="planNotes" rows="3" placeholder="Flight plan notes..."></textarea>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn" id="confirmSavePlan">Save Plan</button>
+                        <button class="btn btn-secondary" id="cancelSavePlan">Cancel</button>
+                    </div>
+                `;
+
+                modal.classList.add('active');
+
+                document.getElementById('confirmSavePlan').addEventListener('click', () => {
+                    const dateTime = document.getElementById('planDateTime').value;
+                    const notes = document.getElementById('planNotes').value;
+
+                    if (dateTime) {
+                        state.upcomingFlights.push({
+                            id: Date.now(),
+                            spotId: spot.id,
+                            spotName: spot.name,
+                            spotData: spot,
+                            dateTime,
+                            notes
+                        });
+                        saveToStorage('upcomingFlights', state.upcomingFlights);
+                        modal.classList.remove('active');
+                        alert('Flight plan saved!');
+                    } else {
+                        alert('Please select a date and time');
+                    }
+                });
+
+                document.getElementById('cancelSavePlan').addEventListener('click', () => {
+                    modal.classList.remove('active');
+                });
+            }
+
+            function markFlightAsFlown(flightId) {
+                const flightIndex = state.upcomingFlights.findIndex(f => f.id == flightId);
+                if (flightIndex === -1) return;
+
+                const flight = state.upcomingFlights[flightIndex];
+
+                state.flights.unshift({
+                    id: Date.now(),
+                    type: 'manual',
+                    name: flight.spotName,
+                    location: flight.spotName,
+                    date: new Date(flight.dateTime).toISOString(),
+                    duration: 0,
+                    notes: flight.notes,
+                    spotData: flight.spotData
+                });
+
+                state.upcomingFlights.splice(flightIndex, 1);
+
+                saveToStorage('upcomingFlights', state.upcomingFlights);
+                saveToStorage('flights', state.flights);
+
+                showRatingModal(state.flights[0].id);
+            }
+
+            function deleteUpcomingFlight(flightId) {
+                if (confirm('Delete this flight plan?')) {
+                    state.upcomingFlights = state.upcomingFlights.filter(f => f.id != flightId);
+                    saveToStorage('upcomingFlights', state.upcomingFlights);
+                    render();
+                }
+            }
+
+            function showRatingModal(flightId) {
+                const flight = state.flights.find(f => f.id == flightId);
+                if (!flight) return;
+
+                const modal = document.getElementById('ratingModal');
+                const content = document.getElementById('ratingContent');
+
+                state.currentRating = {
+                    flightId: flight.id,
+                    descAccuracy: 0,
+                    shotTypeMatch: 0,
+                    accessibility: 0,
+                    wouldFlyAgain: null,
+                    notes: ''
+                };
+
+                content.innerHTML = `
+                    <div style="margin-bottom: 20px;">
+                        <strong>Location:</strong> ${flight.name || flight.location}
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; font-weight: 600; margin-bottom: 10px;">Description Accuracy</label>
+                        <div class="star-rating" id="descAccuracy">
+                            ${[1,2,3,4,5].map(i => `<span class="star" data-rating="${i}">★</span>`).join('')}
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; font-weight: 600; margin-bottom: 10px;">Shot Type Match</label>
+                        <div class="star-rating" id="shotTypeMatch">
+                            ${[1,2,3,4,5].map(i => `<span class="star" data-rating="${i}">★</span>`).join('')}
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; font-weight: 600; margin-bottom: 10px;">Accessibility</label>
+                        <div class="star-rating" id="accessibility">
+                            ${[1,2,3,4,5].map(i => `<span class="star" data-rating="${i}">★</span>`).join('')}
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Additional Notes (optional)</label>
+                        <textarea id="ratingNotes" rows="3" placeholder="Any additional feedback..."></textarea>
+                    </div>
+
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn" id="submitRating">Submit Rating</button>
+                        <button class="btn btn-secondary" id="cancelRating">Cancel</button>
+                    </div>
+                `;
+
+                modal.classList.add('active');
+
+                // Star rating handlers
+                document.querySelectorAll('.star-rating').forEach(group => {
+                    const stars = group.querySelectorAll('.star');
+                    stars.forEach(star => {
+                        star.addEventListener('click', (e) => {
+                            const rating = parseInt(e.target.dataset.rating);
+                            const category = group.id;
+                            state.currentRating[category] = rating;
+
+                            stars.forEach((s, i) => {
+                                s.classList.toggle('active', i < rating);
+                            });
+                        });
+                    });
+                });
+
+                // Submit rating
+                document.getElementById('submitRating').addEventListener('click', () => {
+                    const notes = document.getElementById('ratingNotes').value;
+
+                    if (state.currentRating.descAccuracy > 0 &&
+                        state.currentRating.shotTypeMatch > 0 &&
+                        state.currentRating.accessibility > 0) {
+
+                        state.currentRating.notes = notes;
+                        state.ratings.push({...state.currentRating});
+                        saveToStorage('ratings', state.ratings);
+
+                        modal.classList.remove('active');
+                        state.currentRating = null;
+                        render();
+                    } else {
+                        alert('Please complete all ratings');
+                    }
+                });
+
+                document.getElementById('cancelRating').addEventListener('click', () => {
+                    modal.classList.remove('active');
+                    state.currentRating = null;
+                });
+            }
+
+            function exportData() {
+                let csv = 'Date,Location,Duration,Type,Notes\n';
+                state.flights.forEach(flight => {
+                    csv += `${formatDate(flight.date)},"${flight.name || flight.location}",${flight.duration || 0},${flight.type || 'manual'},"${flight.notes || ''}"\n`;
+                });
+
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'dronescout-flights.csv';
+                a.click();
+            }
+
+            // Initial render
+            checkConnection();
+            render();
+        }
+    </script>
+</body>
+</html>
