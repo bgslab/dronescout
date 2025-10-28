@@ -492,6 +492,51 @@
             border-bottom: 2px solid #e0e6ed;
         }
 
+        .advanced-toggle {
+            background: white;
+            border: 2px solid #e0e6ed;
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            transition: all 0.3s;
+        }
+
+        .advanced-toggle:hover {
+            border-color: #00d4ff;
+        }
+
+        .advanced-toggle.open {
+            background: #f0f5fa;
+            border-color: #00d4ff;
+        }
+
+        .advanced-content {
+            display: none;
+            padding: 15px;
+            background: #f9fafb;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #00d4ff;
+        }
+
+        .advanced-content.open {
+            display: block;
+        }
+
+        .sync-info {
+            font-size: 13px;
+            color: #666;
+            padding: 12px;
+            background: #f0f5fa;
+            border-radius: 8px;
+            border-left: 4px solid #00d4ff;
+            margin: 10px 0;
+        }
+
         .chart-container {
             width: 100%;
             height: 250px;
@@ -738,6 +783,9 @@
                 currentTab: 'planner',
                 selectedSpot: null,
                 destination: '',
+                plannerMode: 'auto',
+                routeStart: '',
+                routeEnd: '',
                 spots: [],
                 upcomingFlights: loadFromStorage('upcomingFlights') || [],
                 flights: loadFromStorage('flights') || [],
@@ -1034,11 +1082,38 @@
                     </div>
 
                     <div class="card">
-                        <div class="input-group">
-                            <label>📍 Destination</label>
-                            <input type="text" id="destinationInput" placeholder="Enter city, hotel, or landmark" value="${state.destination}">
+                        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                            <button class="toggle-btn ${state.plannerMode === 'auto' ? 'active' : ''}" data-mode="auto"
+                                style="flex: 1; padding: 10px; background: ${state.plannerMode === 'auto' ? '#00d4ff' : 'white'};
+                                color: ${state.plannerMode === 'auto' ? 'white' : '#666'}; border: 2px solid ${state.plannerMode === 'auto' ? '#00d4ff' : '#e0e6ed'};
+                                border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.3s;">
+                                Auto Recommend
+                            </button>
+                            <button class="toggle-btn ${state.plannerMode === 'route' ? 'active' : ''}" data-mode="route"
+                                style="flex: 1; padding: 10px; background: ${state.plannerMode === 'route' ? '#00d4ff' : 'white'};
+                                color: ${state.plannerMode === 'route' ? 'white' : '#666'}; border: 2px solid ${state.plannerMode === 'route' ? '#00d4ff' : '#e0e6ed'};
+                                border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.3s;">
+                                Route Mode
+                            </button>
                         </div>
-                        <button class="btn" id="findSpotsBtn">Find Spots</button>
+
+                        ${state.plannerMode === 'auto' ? `
+                            <div class="input-group">
+                                <label>📍 Destination</label>
+                                <input type="text" id="destinationInput" placeholder="Enter city, hotel, or landmark" value="${state.destination}">
+                            </div>
+                            <button class="btn" id="findSpotsBtn">Find Spots</button>
+                        ` : `
+                            <div class="input-group">
+                                <label>🏨 Start Location</label>
+                                <input type="text" id="routeStartInput" placeholder="Hotel, airport, etc." value="${state.routeStart}">
+                            </div>
+                            <div class="input-group">
+                                <label>🎯 End Location</label>
+                                <input type="text" id="routeEndInput" placeholder="Destination address" value="${state.routeEnd}">
+                            </div>
+                            <button class="btn" id="findRouteSpotsBtn">Find Spots Along Route</button>
+                        `}
                     </div>
 
                     ${state.spots.length > 0 ? `
@@ -1330,12 +1405,21 @@
                         </div>
 
                         <div class="settings-section">
-                            <div class="settings-section-title">Worker Configuration</div>
-                            <div class="input-group">
-                                <label>Worker URL</label>
-                                <input type="text" id="workerUrlInput" value="${state.syncSettings.workerUrl}">
+                            <div class="advanced-toggle" id="advancedToggle">
+                                <span>⚙️ Advanced Settings</span>
+                                <span>▶</span>
                             </div>
-                            <button class="btn btn-secondary" id="updateWorkerBtn">Update URL</button>
+                            <div class="advanced-content" id="advancedContent">
+                                <div class="input-group">
+                                    <label>Worker URL</label>
+                                    <input type="text" id="workerUrlInput" placeholder="https://..." value="${state.syncSettings.workerUrl}">
+                                </div>
+                                <div class="sync-info">
+                                    Change only if you're self-hosting the Cloudflare Worker. Most users should leave this unchanged.
+                                </div>
+                                <button class="btn-secondary" id="updateWorkerBtn">Update URL</button>
+                                <button class="btn-secondary" id="testConnectionBtn">Test Connection</button>
+                            </div>
                         </div>
 
                         <div class="settings-section">
@@ -1672,6 +1756,55 @@
                                 state.syncMessage = null;
                                 render();
                             }, 2000);
+                        }
+                    });
+                }
+
+                // Advanced Settings toggle
+                const advancedToggle = document.getElementById('advancedToggle');
+                const advancedContent = document.getElementById('advancedContent');
+                if (advancedToggle && advancedContent) {
+                    advancedToggle.addEventListener('click', () => {
+                        advancedToggle.classList.toggle('open');
+                        advancedContent.classList.toggle('open');
+                        const arrow = advancedToggle.querySelector('span:last-child');
+                        if (arrow) {
+                            arrow.textContent = advancedContent.classList.contains('open') ? '▼' : '▶';
+                        }
+                    });
+                }
+
+                // Test Connection button
+                const testConnectionBtn = document.getElementById('testConnectionBtn');
+                if (testConnectionBtn) {
+                    testConnectionBtn.addEventListener('click', async () => {
+                        await checkConnection();
+                        render();
+                    });
+                }
+
+                // Trip Planner mode toggle buttons
+                document.querySelectorAll('.toggle-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const mode = e.target.dataset.mode;
+                        if (mode && (mode === 'auto' || mode === 'route')) {
+                            state.plannerMode = mode;
+                            render();
+                        }
+                    });
+                });
+
+                // Route Mode search button
+                const findRouteSpotsBtn = document.getElementById('findRouteSpotsBtn');
+                if (findRouteSpotsBtn) {
+                    findRouteSpotsBtn.addEventListener('click', () => {
+                        const startInput = document.getElementById('routeStartInput');
+                        const endInput = document.getElementById('routeEndInput');
+                        if (startInput && endInput && startInput.value && endInput.value) {
+                            state.routeStart = startInput.value;
+                            state.routeEnd = endInput.value;
+                            state.spots = scenicSpots;
+                            render();
                         }
                     });
                 }
