@@ -1783,7 +1783,7 @@
                 if (togglePreferencesBtn) {
                     togglePreferencesBtn.addEventListener('click', () => {
                         state.showPreferences = !state.showPreferences;
-                        renderTripPlanner();
+                        render();
                     });
                 }
 
@@ -1794,7 +1794,7 @@
                         slider.addEventListener('input', (e) => {
                             state.preferences[pref] = parseInt(e.target.value);
                             saveToStorage('preferences', state.preferences);
-                            renderTripPlanner();
+                            render();
                         });
                     }
                 });
