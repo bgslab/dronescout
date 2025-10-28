@@ -4,8 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DroneScout v5 - Complete</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Conditional Leaflet loading: Desktop only, mobile skips maps for instant load -->
+    <script>
+        if (!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+            document.write('<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">');
+            document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>');
+        }
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * {
@@ -85,6 +90,79 @@
             padding: 20px;
             margin-bottom: 15px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .preferences-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .preferences-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .preferences-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1e3c72;
+        }
+        .preferences-toggle {
+            background: none;
+            border: none;
+            color: #00d4ff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .slider-group {
+            margin-bottom: 20px;
+        }
+        .slider-group:last-child {
+            margin-bottom: 0;
+        }
+        .slider-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .slider-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #666;
+        }
+        .slider-label.active {
+            color: #00d4ff;
+        }
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #e0e6ed;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00d4ff;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 212, 255, 0.4);
+        }
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00d4ff;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 6px rgba(0, 212, 255, 0.4);
         }
 
         .input-group {
@@ -791,12 +869,13 @@
                 flights: loadFromStorage('flights') || [],
                 ratings: loadFromStorage('ratings') || [],
                 preferences: loadFromStorage('preferences') || {
-                    scenicWeight: 75,
-                    accessibilityWeight: 50,
-                    popularityWeight: 25
+                    cityscape: 50,
+                    nature: 50,
+                    architecture: 50
                 },
                 favorites: loadFromStorage('favorites') || [],
                 showFavoritesOnly: false,
+                showPreferences: false,
                 currentRating: null,
                 syncSettings: loadFromStorage('syncSettings') || {
                     workerUrl: 'https://dronescout-proxy.dronescout-api.workers.dev',
@@ -1114,6 +1193,38 @@
                             </div>
                             <button class="btn" id="findRouteSpotsBtn">Find Spots Along Route</button>
                         `}
+                    </div>
+
+                    <div class="preferences-section">
+                        <div class="preferences-header">
+                            <div class="preferences-title">🎯 Shot Preferences</div>
+                            <button class="preferences-toggle" id="togglePreferences">
+                                ${state.showPreferences ? 'Hide' : 'Customize'}
+                            </button>
+                        </div>
+                        ${state.showPreferences ? `
+                            <div class="slider-group">
+                                <div class="slider-labels">
+                                    <span class="slider-label ${state.preferences.cityscape < 50 ? 'active' : ''}">Landscape</span>
+                                    <span class="slider-label ${state.preferences.cityscape >= 50 ? 'active' : ''}">Cityscape</span>
+                                </div>
+                                <input type="range" min="0" max="100" value="${state.preferences.cityscape}" class="slider" id="cityscapeSlider">
+                            </div>
+                            <div class="slider-group">
+                                <div class="slider-labels">
+                                    <span class="slider-label ${state.preferences.nature < 50 ? 'active' : ''}">Architecture</span>
+                                    <span class="slider-label ${state.preferences.nature >= 50 ? 'active' : ''}">Nature</span>
+                                </div>
+                                <input type="range" min="0" max="100" value="${state.preferences.nature}" class="slider" id="natureSlider">
+                            </div>
+                            <div class="slider-group">
+                                <div class="slider-labels">
+                                    <span class="slider-label ${state.preferences.architecture < 50 ? 'active' : ''}">Serene</span>
+                                    <span class="slider-label ${state.preferences.architecture >= 50 ? 'active' : ''}">Dynamic</span>
+                                </div>
+                                <input type="range" min="0" max="100" value="${state.preferences.architecture}" class="slider" id="architectureSlider">
+                            </div>
+                        ` : ''}
                     </div>
 
                     ${state.spots.length > 0 ? `
@@ -1666,6 +1777,27 @@
                         render();
                     });
                 }
+
+                // Toggle preferences
+                const togglePreferencesBtn = document.getElementById('togglePreferences');
+                if (togglePreferencesBtn) {
+                    togglePreferencesBtn.addEventListener('click', () => {
+                        state.showPreferences = !state.showPreferences;
+                        renderTripPlanner();
+                    });
+                }
+
+                // Preference sliders
+                ['cityscape', 'nature', 'architecture'].forEach(pref => {
+                    const slider = document.getElementById(`${pref}Slider`);
+                    if (slider) {
+                        slider.addEventListener('input', (e) => {
+                            state.preferences[pref] = parseInt(e.target.value);
+                            saveToStorage('preferences', state.preferences);
+                            renderTripPlanner();
+                        });
+                    }
+                });
 
                 // Favorite star buttons
                 document.querySelectorAll('.favorite-star').forEach(btn => {
