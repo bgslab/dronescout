@@ -883,7 +883,9 @@
                     connectionStatus: 'checking'
                 },
                 syncMessage: null,
-                expandedFlight: null
+                expandedFlight: null,
+                map: null,
+                userLocation: null
             };
 
             // LocalStorage helpers
@@ -1559,6 +1561,10 @@
                             </button>
                         </div>
 
+                        <div style="margin-bottom: 20px; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <div id="spotsMap" style="height: 300px; width: 100%; background: #f0f0f0;"></div>
+                        </div>
+
                         ${displaySpots.length === 0 ? `
                             <div class="card" style="text-align: center; padding: 40px 20px;">
                                 <p style="color: #666;">No favorite spots yet. Star some locations to save them!</p>
@@ -1683,6 +1689,120 @@
                         </div>
                     `;
                 }).join('');
+            }
+
+            // Get user location
+            function getUserLocation() {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            state.userLocation = {
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude
+                            };
+                            console.log('User location acquired:', state.userLocation);
+                            // Reinitialize map with user location if map exists
+                            if (state.map && state.spots.length > 0) {
+                                initMap();
+                            }
+                        },
+                        (error) => {
+                            console.log('Could not get user location:', error);
+                        }
+                    );
+                }
+            }
+
+            // Initialize map with spots and user location
+            function initMap() {
+                console.log('🗺️ initMap called, spots:', state.spots.length);
+                if (state.spots.length === 0) {
+                    console.log('No spots to display on map');
+                    return;
+                }
+                if (typeof L === 'undefined') {
+                    console.warn('Leaflet library not loaded, skipping map (mobile device?)');
+                    return;
+                }
+
+                const container = document.getElementById('spotsMap');
+                console.log('Map container found:', !!container, container);
+                if (!container) {
+                    console.error('❌ Map container #spotsMap not found in DOM');
+                    return;
+                }
+
+                try {
+                    // Remove existing map if present
+                    if (state.map) {
+                        state.map.remove();
+                    }
+
+                    // Determine center point
+                    const center = state.userLocation ||
+                                   (state.spots.length > 0 ? state.spots[0].coordinates : { lat: 40.5, lng: -89 });
+
+                    // Create map
+                    state.map = L.map(container).setView([center.lat, center.lng], 10);
+
+                    // Add tile layer
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap',
+                        maxZoom: 19
+                    }).addTo(state.map);
+
+                    // Add user location marker (blue dot)
+                    if (state.userLocation) {
+                        L.circleMarker([state.userLocation.lat, state.userLocation.lng], {
+                            radius: 10,
+                            fillColor: '#00d4ff',
+                            color: '#fff',
+                            weight: 3,
+                            opacity: 1,
+                            fillOpacity: 0.9
+                        }).addTo(state.map).bindPopup('<strong>📍 Your Location</strong>');
+                    }
+
+                    // Add spot markers
+                    let markersAdded = 0;
+                    state.spots.forEach(spot => {
+                        if (spot.coordinates) {
+                            const riskScore = getAdjustedRiskScore(spot);
+                            const markerColor = riskScore >= 75 ? '#28a745' :
+                                              riskScore >= 50 ? '#ffc107' : '#dc3545';
+                            L.circleMarker([spot.coordinates.lat, spot.coordinates.lng], {
+                                radius: 8,
+                                fillColor: markerColor,
+                                color: '#fff',
+                                weight: 2,
+                                opacity: 1,
+                                fillOpacity: 0.8
+                            }).addTo(state.map).bindPopup(`<strong>${spot.name}</strong><br>${spot.distance || ''}`);
+                            markersAdded++;
+                        }
+                    });
+                    console.log('✅ Added', markersAdded, 'spot markers to map');
+
+                    // Fit bounds to show all markers
+                    const allPoints = [];
+                    if (state.userLocation) {
+                        allPoints.push([state.userLocation.lat, state.userLocation.lng]);
+                    }
+                    state.spots.forEach(spot => {
+                        if (spot.coordinates) {
+                            allPoints.push([spot.coordinates.lat, spot.coordinates.lng]);
+                        }
+                    });
+
+                    if (allPoints.length > 0) {
+                        const bounds = L.latLngBounds(allPoints);
+                        state.map.fitBounds(bounds, { padding: [50, 50] });
+                    }
+
+                    console.log('✅ Map initialized successfully!');
+                } catch (error) {
+                    console.error('❌ Map initialization failed:', error);
+                }
             }
 
             function renderUpcoming() {
@@ -2121,6 +2241,11 @@
                                 findSpotsBtn.disabled = false;
                                 findSpotsBtn.textContent = 'Find Spots';
                                 render();
+                                // Initialize map after render
+                                setTimeout(() => {
+                                    initMap();
+                                    getUserLocation();
+                                }, 100);
                             }
                         }
                     });
@@ -2132,6 +2257,8 @@
                     toggleFavoritesBtn.addEventListener('click', () => {
                         state.showFavoritesOnly = !state.showFavoritesOnly;
                         render();
+                        // Reinitialize map after render
+                        setTimeout(() => initMap(), 100);
                     });
                 }
 
@@ -2294,6 +2421,11 @@
                             state.routeEnd = endInput.value;
                             state.spots = scenicSpots;
                             render();
+                            // Initialize map after render
+                            setTimeout(() => {
+                                initMap();
+                                getUserLocation();
+                            }, 100);
                         }
                     });
                 }
