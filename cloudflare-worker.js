@@ -164,15 +164,16 @@ async function handleSyncFlights(apiToken) {
  * Uses Skydio Cloud API v0 (Organization API tokens)
  */
 async function handleFlightDetails(flightId, apiToken) {
+  // NOTE: ALL v0 endpoints use direct token (no Bearer prefix)
   const headers = {
-    'Authorization': apiToken, // Organization API tokens: no "Bearer" prefix
+    'Authorization': apiToken,
     'Accept': 'application/json',
   };
 
-  // v0 API: Fetch flight details and telemetry in parallel
+  // v0 API: /api/v0/flight/{id} (singular!) and /api/v0/flight/{id}/telemetry
   const [flightResponse, telemetryResponse] = await Promise.all([
-    fetch(`${SKYDIO_API_BASE}/api/v0/flights/${flightId}`, { headers }),
-    fetch(`${SKYDIO_API_BASE}/api/v1/telemetry?flight_id=${flightId}`, { headers }),
+    fetch(`${SKYDIO_API_BASE}/api/v0/flight/${flightId}`, { headers }),
+    fetch(`${SKYDIO_API_BASE}/api/v0/flight/${flightId}/telemetry`, { headers }),
   ]);
 
   if (!flightResponse.ok) {
@@ -184,68 +185,83 @@ async function handleFlightDetails(flightId, apiToken) {
     });
     throw new Error(`Failed to fetch flight: ${flightResponse.status} - ${errorBody}`);
   }
+  // Telemetry might 404 if never uploaded or deleted (KNOWN-676)
+  let telemetryData = null;
   if (!telemetryResponse.ok) {
-    const errorBody = await telemetryResponse.text();
-    console.error('Telemetry error:', {
-      flightId,
-      status: telemetryResponse.status,
-      body: errorBody
-    });
-    throw new Error(`Failed to fetch telemetry: ${telemetryResponse.status} - ${errorBody}`);
+    if (telemetryResponse.status === 404) {
+      console.warn('Telemetry not available for flight:', flightId);
+      // Continue without telemetry
+    } else {
+      const errorBody = await telemetryResponse.text();
+      console.error('Telemetry error:', {
+        flightId,
+        status: telemetryResponse.status,
+        body: errorBody
+      });
+      throw new Error(`Failed to fetch telemetry: ${telemetryResponse.status} - ${errorBody}`);
+    }
+  } else {
+    telemetryData = await telemetryResponse.json();
   }
 
   const flightData = await flightResponse.json();
-  const telemetryData = await telemetryResponse.json();
 
-  // Combine and format for app
-  const flight = flightData.data;
-  const telemetry = telemetryData.data;
+  // v0 response: { data: { flight: {...}, flight_telemetry: {...} }, meta: {...}, status_code: 200 }
+  const flight = flightData.data?.flight || flightData.data;
+
+  // Parse telemetry - structure is data.flight_telemetry with GPS/altitude/timestamps
+  let telemetryTrack = null;
+  if (telemetryData?.data?.flight_telemetry) {
+    const telem = telemetryData.data.flight_telemetry;
+    // GPS data is array of [lat, lon] pairs with corresponding timestamps
+    if (telem.gps?.data && telem.gps?.timestamps) {
+      telemetryTrack = telem.gps.timestamps.map((timestamp, idx) => ({
+        timestamp,
+        lat: telem.gps.data[idx][0], // [lat, lon] array
+        lon: telem.gps.data[idx][1],
+        altitude: telem.altitude?.data?.[idx] || 0,
+        batteryPct: telem.battery_percentage?.data?.[idx],
+        heightAboveTakeoff: telem.height_above_takeoff?.data?.[idx],
+      }));
+    }
+  }
 
   return jsonResponse({
     success: true,
     flight: {
-      id: flight.id,
-      aircraft: flight.aircraft_model,
-      firmware: flight.firmware_version,
-      startTime: flight.start_time,
-      endTime: flight.end_time,
-      duration: flight.duration_sec,
-      stats: {
-        maxAltitude: flight.stats.max_altitude_m,
-        maxSpeed: flight.stats.max_speed_mps,
-        maxDistance: flight.stats.max_distance_from_home_m,
-        takeoffBattery: flight.stats.takeoff_battery_pct,
-        landingBattery: flight.stats.landing_battery_pct,
-      },
-      launchLocation: {
-        lat: flight.location_summary.launch_lat,
-        lon: flight.location_summary.launch_lon,
-      },
-      pilot: flight.pilot,
+      flightId: flight.flight_id || flightId,
+      vehicleSerial: flight.vehicle_serial,
+      batterySerial: flight.battery_serial,
+      userEmail: flight.user_email,
+      takeoff: flight.takeoff,
+      landing: flight.landing,
+      hasTelemetry: flight.has_telemetry,
+      takeoffLatitude: flight.takeoff_latitude,
+      takeoffLongitude: flight.takeoff_longitude,
+      attachments: flight.attachments,
+      sensorPackage: flight.sensor_package,
     },
-    telemetry: {
-      flightId: telemetry.flight_id,
-      sampleRate: telemetry.sample_rate_hz,
-      track: telemetry.track, // Full GPS track array
-      bounds: telemetry.bounds,
-      pointCount: telemetry.track?.length || 0,
-    },
+    telemetry: telemetryTrack ? {
+      track: telemetryTrack,
+      pointCount: telemetryTrack.length,
+    } : null,
   });
 }
 
 /**
  * GET /flight/:id/media
- * Fetches all media (photos/videos) for a flight
- * Returns: Array of media with download URLs and GPS tags
+ * Fetches all media (photos/videos/logs) for a flight
+ * Returns: Array of flight data files with download URLs
  * Uses Skydio Cloud API v0 (Organization API tokens)
  */
 async function handleFlightMedia(flightId, apiToken) {
-  // v0 API: Use query parameter to filter media by flight_id
+  // v0 API: /api/v0/flight_data_files?flight_id={id}
+  // NOTE: All v0 endpoints use direct token (no Bearer)
   const response = await fetch(
-    `${SKYDIO_API_BASE}/api/v0/media?flight_id=${flightId}`,
+    `${SKYDIO_API_BASE}/api/v0/flight_data_files?flight_id=${flightId}`,
     {
       headers: {
-        'Authorization': apiToken, // Organization API tokens: no "Bearer" prefix
+        'Authorization': apiToken,
         'Accept': 'application/json',
       },
     }
@@ -263,18 +279,19 @@ async function handleFlightMedia(flightId, apiToken) {
 
   const data = await response.json();
 
-  // Format media for app
-  const media = data.data.map(item => ({
-    id: item.id,
-    type: item.type, // 'photo' or 'video'
-    mimeType: item.mime_type,
-    capturedAt: item.captured_at,
-    sizeBytes: item.size_bytes,
-    duration: item.duration_sec, // Only for videos
-    gps: item.gps,
-    downloadUrl: item.download_url,
-    thumbnailUrl: item.thumbnail_url,
-    hasExif: item.exif_available,
+  // v0 response: { data: { flight_data_files: [...] }, meta: {...}, status_code: 200 }
+  const files = data.data?.flight_data_files || data.data || [];
+
+  // Format flight data files for app
+  const media = files.map(file => ({
+    fileId: file.file_id || file.id,
+    fileName: file.file_name,
+    fileType: file.file_type, // e.g., 'VIDEO', 'PHOTO', 'LOG'
+    sizeBytes: file.size_bytes,
+    createdAt: file.created_at,
+    // Download URL format: /api/v0/flight_data_files/{file_id}
+    downloadUrl: `${SKYDIO_API_BASE}/api/v0/flight_data_files/${file.file_id || file.id}`,
+    metadata: file.metadata || {},
   }));
 
   return jsonResponse({

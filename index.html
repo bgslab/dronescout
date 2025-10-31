@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout v7.0 - Working Skydio Cloud Sync</title>
+    <title>DroneScout v7.1 - Flight Path Visualization</title>
     <!-- V6 Fix: Proper Leaflet loading on ALL devices (no conditional loading) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
@@ -818,7 +818,7 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout v7.0</h1>
+            <h1>🚁 DroneScout v7.1</h1>
             <p>Plan • Map • Route • Assess • Fly • Sync • Analyze</p>
         </div>
 
@@ -1551,6 +1551,81 @@
                 return null;
             }
 
+            // View flight path on map
+            async function viewFlightPath(flightId) {
+                try {
+                    // Switch to Map tab
+                    state.currentTab = 'planner';
+
+                    // Show loading message
+                    state.syncMessage = { type: 'info', text: 'Loading flight path...' };
+                    render();
+
+                    // Fetch flight details with telemetry
+                    const details = await fetchFlightDetails(flightId);
+
+                    if (!details || !details.telemetry || !details.telemetry.track) {
+                        state.syncMessage = { type: 'error', text: 'No telemetry data available for this flight' };
+                        render();
+                        return;
+                    }
+
+                    // Clear existing layers and center on flight
+                    if (state.map) {
+                        // Remove existing flight path layers
+                        state.map.eachLayer(layer => {
+                            if (layer.options && layer.options.className === 'flight-path') {
+                                state.map.removeLayer(layer);
+                            }
+                        });
+
+                        // Convert telemetry to LatLng array
+                        const pathCoords = details.telemetry.track.map(point => [point.lat, point.lon]);
+
+                        // Draw flight path on map
+                        const flightPath = L.polyline(pathCoords, {
+                            color: '#2563eb',
+                            weight: 3,
+                            opacity: 0.8,
+                            className: 'flight-path'
+                        }).addTo(state.map);
+
+                        // Add markers for takeoff and landing
+                        const startPoint = pathCoords[0];
+                        const endPoint = pathCoords[pathCoords.length - 1];
+
+                        L.marker(startPoint, {
+                            icon: L.divIcon({
+                                html: '🛫',
+                                className: 'flight-marker',
+                                iconSize: [30, 30]
+                            })
+                        }).addTo(state.map).bindPopup(`<b>Takeoff</b><br>${details.flight.vehicleSerial}`);
+
+                        L.marker(endPoint, {
+                            icon: L.divIcon({
+                                html: '🛬',
+                                className: 'flight-marker',
+                                iconSize: [30, 30]
+                            })
+                        }).addTo(state.map).bindPopup(`<b>Landing</b><br>${details.flight.vehicleSerial}`);
+
+                        // Fit map to show entire flight path
+                        state.map.fitBounds(flightPath.getBounds(), { padding: [50, 50] });
+
+                        state.syncMessage = { type: 'success', text: `Flight path loaded (${details.telemetry.pointCount} points)` };
+                    } else {
+                        state.syncMessage = { type: 'error', text: 'Map not initialized' };
+                    }
+
+                    render();
+                } catch (error) {
+                    console.error('Error viewing flight path:', error);
+                    state.syncMessage = { type: 'error', text: `Failed to load flight path: ${error.message}` };
+                    render();
+                }
+            }
+
             function formatDate(dateString) {
                 const date = new Date(dateString);
                 return date.toLocaleDateString('en-US', {
@@ -2157,6 +2232,11 @@
                                             <button class="btn-small" data-action="rate" data-flight-id="${flight.id}">
                                                 ⭐ Rate This Flight
                                             </button>
+                                            ${flight.synced ? `
+                                            <button class="btn-small" data-action="viewPath" data-flight-id="${flight.id}">
+                                                🗺️ View Flight Path
+                                            </button>
+                                            ` : ''}
                                         </div>
                                     ` : `
                                         <div style="margin-top: 12px; padding: 10px; background: #f8f9fa; border-radius: 6px;">
@@ -2586,6 +2666,8 @@
                             deleteUpcomingFlight(flightId);
                         } else if (action === 'rate') {
                             showRatingModal(flightId);
+                        } else if (action === 'viewPath') {
+                            viewFlightPath(flightId);
                         }
                     });
                 });
