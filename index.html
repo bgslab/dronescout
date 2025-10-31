@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DroneScout v7.1 - Flight Path Visualization</title>
+    <!-- Build: 2025-10-31-23:45 UTC - Cache Buster -->
     <!-- V6 Fix: Proper Leaflet loading on ALL devices (no conditional loading) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
@@ -820,6 +821,7 @@
         <div class="header">
             <h1>🚁 DroneScout v7.1</h1>
             <p>Plan • Map • Route • Assess • Fly • Sync • Analyze</p>
+            <p style="font-size: 10px; color: #666;">Build: 2025-10-31 23:45 UTC</p>
         </div>
 
         <div class="nav-tabs">
@@ -2207,6 +2209,8 @@
                             Flight History (${state.flights.length})
                         </h2>
                         ${state.flights.map(flight => {
+                            // V7.1 Debug: Log flight sync status
+                            console.log('Flight:', flight.id, 'synced:', flight.synced, 'type:', flight.type);
                             const rating = state.ratings.find(r => r.flightId === flight.id);
 
                             return `
