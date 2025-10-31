@@ -1562,14 +1562,10 @@
             // View flight path on map
             async function viewFlightPath(flightId) {
                 try {
-                    // Switch to Map tab
-                    state.currentTab = 'planner';
-
                     // Show loading message
                     state.syncMessage = { type: 'info', text: 'Loading flight path...' };
-                    render();
 
-                    // Fetch flight details with telemetry
+                    // Fetch flight details with telemetry FIRST
                     const details = await fetchFlightDetails(flightId);
 
                     if (!details || !details.telemetry || !details.telemetry.track) {
@@ -1578,11 +1574,24 @@
                         return;
                     }
 
-                    // Initialize map if it doesn't exist
+                    // Set a temporary flight location from telemetry to help map center
+                    const firstPoint = details.telemetry.track[0];
+                    state.destinationCoords = {
+                        lat: firstPoint.lat,
+                        lng: firstPoint.lon
+                    };
+
+                    // Switch to planner tab and render
+                    state.currentTab = 'planner';
+                    render();
+
+                    // Wait for DOM to be ready, then initialize map
+                    await new Promise(resolve => setTimeout(resolve, 200));
+
                     if (!state.map) {
                         console.log('Map not initialized, initializing now...');
-                        setTimeout(() => initMap(), 100);
-                        // Wait for map to initialize
+                        initMap();
+                        // Wait for map to fully initialize
                         await new Promise(resolve => setTimeout(resolve, 500));
                     }
 
