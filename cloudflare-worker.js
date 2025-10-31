@@ -21,6 +21,16 @@ export default {
     const path = url.pathname;
 
     try {
+      // Debug endpoint to check token status
+      if (path === '/debug' && request.method === 'GET') {
+        return jsonResponse({
+          tokenExists: !!env.SKYDIO_API_TOKEN,
+          tokenLength: env.SKYDIO_API_TOKEN ? env.SKYDIO_API_TOKEN.length : 0,
+          tokenPrefix: env.SKYDIO_API_TOKEN ? env.SKYDIO_API_TOKEN.substring(0, 8) + '...' : 'N/A',
+          apiBase: SKYDIO_API_BASE
+        });
+      }
+
       // Route requests
       if (path === '/sync-flights' && request.method === 'POST') {
         return await handleSyncFlights(env.SKYDIO_API_TOKEN);
@@ -57,6 +67,7 @@ export default {
  * POST /sync-flights
  * Fetches all completed flights (handles pagination automatically)
  * Returns: Array of flights with basic details for History list
+ * Uses Skydio Cloud API v1 (External API)
  */
 async function handleSyncFlights(apiToken) {
   const allFlights = [];
@@ -64,15 +75,21 @@ async function handleSyncFlights(apiToken) {
   let hasMore = true;
 
   while (hasMore) {
-    const response = await fetch(
-      `${SKYDIO_API_BASE}/api/v0/flights?status=completed&page=${page}&page_size=50`,
-      {
-        headers: {
-          'Authorization': `Bearer ${apiToken}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+    // Organization API tokens use v0 endpoint with direct token auth (no Bearer prefix)
+    const apiUrl = `${SKYDIO_API_BASE}/api/v0/flights?status=completed&page=${page}&page_size=50`;
+    console.log('Fetching flights (v0):', {
+      url: apiUrl,
+      page: page,
+      tokenLength: apiToken ? apiToken.length : 0,
+      tokenPrefix: apiToken ? apiToken.substring(0, 8) + '...' : 'N/A'
+    });
+
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': apiToken, // Organization API tokens: no "Bearer" prefix
+        'Accept': 'application/json',
+      },
+    });
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -86,41 +103,50 @@ async function handleSyncFlights(apiToken) {
     }
 
     const data = await response.json();
-    
+
+    // v0 API response structure: { data: { flights: [...] }, meta: {...}, status_code: 200 }
+    if (!data.data || !data.data.flights) {
+      console.error('Unexpected API response structure:', { dataKeys: Object.keys(data) });
+      throw new Error('Invalid API response: missing data.flights');
+    }
+
+    const flightsArray = data.data.flights;
+
     // Transform to simplified format for History tab
     // Match frontend schema: created_at, duration_seconds, name
-    const flights = data.data.map(flight => ({
-      id: flight.id,
-      name: `${flight.aircraft_model || 'Drone'} Flight`, // Generate name from aircraft
-      created_at: flight.start_time,
-      duration_seconds: flight.duration_sec,
+    const flights = flightsArray.map(flight => ({
+      id: flight.flight_id,
+      name: `${flight.vehicle_serial || 'Drone'} Flight`, // Use vehicle serial as name
+      created_at: flight.takeoff,
+      duration_seconds: flight.landing && flight.takeoff
+        ? Math.floor((new Date(flight.landing) - new Date(flight.takeoff)) / 1000)
+        : 0,
       location: {
-        lat: flight.location_summary?.launch_lat,
-        lon: flight.location_summary?.launch_lon,
+        lat: flight.takeoff_latitude,
+        lon: flight.takeoff_longitude,
       },
       media_urls: [], // Will be populated by separate media fetch
       // Additional metadata for future use
       metadata: {
-        aircraft: flight.aircraft_model,
-        endTime: flight.end_time,
-        maxAltitude: flight.max_altitude_m,
-        maxSpeed: flight.max_speed_mps,
-        batteryUsed: flight.avg_battery_pct,
+        vehicle_serial: flight.vehicle_serial,
+        battery_serial: flight.battery_serial,
+        user_email: flight.user_email,
+        landing: flight.landing,
+        has_telemetry: flight.has_telemetry,
+        attachments: flight.attachments,
+        sensor_package: flight.sensor_package,
       },
       synced: true, // Flag to distinguish from manual entries
     }));
 
     allFlights.push(...flights);
 
-    // Check pagination
-    hasMore = data.meta?.has_more || false;
-    page++;
+    // v0 API doesn't return has_more; stop after getting results or if empty
+    // For now, fetch just the first page (50 flights)
+    // TODO: Implement proper pagination when we understand v0 pagination structure
+    hasMore = false;
 
-    // Safety limit to prevent infinite loops
-    if (page > 100) {
-      console.warn('Hit pagination safety limit (100 pages)');
-      break;
-    }
+    console.log(`Fetched ${flights.length} flights from page ${page}`);
   }
 
   return jsonResponse({
@@ -135,14 +161,15 @@ async function handleSyncFlights(apiToken) {
  * GET /flight/:id/details
  * Fetches full flight details + telemetry track
  * Returns: Combined flight details and GPS track for map display
+ * Uses Skydio Cloud API v0 (Organization API tokens)
  */
 async function handleFlightDetails(flightId, apiToken) {
   const headers = {
-    'Authorization': `Bearer ${apiToken}`,
-    'Content-Type': 'application/json',
+    'Authorization': apiToken, // Organization API tokens: no "Bearer" prefix
+    'Accept': 'application/json',
   };
 
-  // Fetch flight details and telemetry in parallel
+  // v0 API: Fetch flight details and telemetry in parallel
   const [flightResponse, telemetryResponse] = await Promise.all([
     fetch(`${SKYDIO_API_BASE}/api/v0/flights/${flightId}`, { headers }),
     fetch(`${SKYDIO_API_BASE}/api/v1/telemetry?flight_id=${flightId}`, { headers }),
@@ -210,14 +237,16 @@ async function handleFlightDetails(flightId, apiToken) {
  * GET /flight/:id/media
  * Fetches all media (photos/videos) for a flight
  * Returns: Array of media with download URLs and GPS tags
+ * Uses Skydio Cloud API v0 (Organization API tokens)
  */
 async function handleFlightMedia(flightId, apiToken) {
+  // v0 API: Use query parameter to filter media by flight_id
   const response = await fetch(
     `${SKYDIO_API_BASE}/api/v0/media?flight_id=${flightId}`,
     {
       headers: {
-        'Authorization': `Bearer ${apiToken}`,
-        'Content-Type': 'application/json',
+        'Authorization': apiToken, // Organization API tokens: no "Bearer" prefix
+        'Accept': 'application/json',
       },
     }
   );
