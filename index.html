@@ -1578,6 +1578,14 @@
                         return;
                     }
 
+                    // Initialize map if it doesn't exist
+                    if (!state.map) {
+                        console.log('Map not initialized, initializing now...');
+                        setTimeout(() => initMap(), 100);
+                        // Wait for map to initialize
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+
                     // Clear existing layers and center on flight
                     if (state.map) {
                         // Remove existing flight path layers
