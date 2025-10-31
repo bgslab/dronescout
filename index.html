@@ -1379,9 +1379,30 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' }
                     });
-                    state.syncSettings.connectionStatus = response.ok ? 'connected' : 'error';
+
+                    if (response.ok) {
+                        state.syncSettings.connectionStatus = 'connected';
+                        console.log('Connection check successful:', {
+                            workerUrl: state.syncSettings.workerUrl,
+                            status: response.status
+                        });
+                    } else {
+                        state.syncSettings.connectionStatus = 'error';
+                        const errorText = await response.text();
+                        console.error('Connection check failed:', {
+                            workerUrl: state.syncSettings.workerUrl,
+                            status: response.status,
+                            statusText: response.statusText,
+                            body: errorText
+                        });
+                    }
                 } catch (error) {
                     state.syncSettings.connectionStatus = 'error';
+                    console.error('Connection check error:', {
+                        message: error.message,
+                        workerUrl: state.syncSettings.workerUrl,
+                        timestamp: new Date().toISOString()
+                    });
                 }
             }
 
@@ -1430,10 +1451,104 @@
                     saveToStorage('syncSettings', state.syncSettings);
                     render();
                 } catch (error) {
+                    console.error('Sync error:', {
+                        message: error.message,
+                        stack: error.stack,
+                        workerUrl: state.syncSettings.workerUrl,
+                        timestamp: new Date().toISOString()
+                    });
                     state.syncSettings.connectionStatus = 'error';
-                    state.syncMessage = { type: 'error', text: 'Failed to sync. Check connection.' };
+                    state.syncMessage = {
+                        type: 'error',
+                        text: `Sync failed: ${error.message}. Check console for details.`
+                    };
                     render();
                 }
+            }
+
+            // Fetch detailed flight data including telemetry track
+            async function fetchFlightDetails(flightId) {
+                try {
+                    const response = await fetch(`${state.syncSettings.workerUrl}/flight/${flightId}/details`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    if (!response.ok) throw new Error('Failed to fetch flight details');
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        return {
+                            flight: data.flight,
+                            telemetry: data.telemetry
+                        };
+                    }
+
+                    return null;
+                } catch (error) {
+                    console.error('Error fetching flight details:', error);
+                    state.syncMessage = { type: 'error', text: `Failed to load flight details: ${error.message}` };
+                    render();
+                    return null;
+                }
+            }
+
+            // Fetch media (photos/videos) for a flight
+            async function fetchFlightMedia(flightId) {
+                try {
+                    const response = await fetch(`${state.syncSettings.workerUrl}/flight/${flightId}/media`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    if (!response.ok) throw new Error('Failed to fetch flight media');
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        return data.media;
+                    }
+
+                    return [];
+                } catch (error) {
+                    console.error('Error fetching flight media:', error);
+                    state.syncMessage = { type: 'error', text: `Failed to load media: ${error.message}` };
+                    render();
+                    return [];
+                }
+            }
+
+            // Load complete flight data (details + media)
+            async function loadSyncedFlightData(flightId) {
+                state.syncMessage = { type: 'info', text: 'Loading flight data...' };
+                render();
+
+                const [details, media] = await Promise.all([
+                    fetchFlightDetails(flightId),
+                    fetchFlightMedia(flightId)
+                ]);
+
+                if (details) {
+                    // Update the flight in state with detailed data
+                    const flightIndex = state.flights.findIndex(f => f.id === flightId);
+                    if (flightIndex >= 0) {
+                        state.flights[flightIndex] = {
+                            ...state.flights[flightIndex],
+                            details: details.flight,
+                            telemetry: details.telemetry,
+                            mediaUrls: media.map(m => m.downloadUrl),
+                            mediaDetails: media
+                        };
+                        saveToStorage('flights', state.flights);
+                    }
+
+                    state.syncMessage = { type: 'success', text: 'Flight data loaded' };
+                    render();
+                    return { details, media };
+                }
+
+                return null;
             }
 
             function formatDate(dateString) {

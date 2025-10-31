@@ -38,8 +38,17 @@ export default {
 
       return jsonResponse({ error: 'Not found' }, 404);
     } catch (error) {
-      console.error('Worker error:', error);
-      return jsonResponse({ error: error.message }, 500);
+      console.error('Worker error:', {
+        message: error.message,
+        stack: error.stack,
+        path: path,
+        method: request.method
+      });
+      return jsonResponse({
+        error: error.message,
+        details: 'Check worker logs for more information',
+        timestamp: new Date().toISOString()
+      }, 500);
     }
   },
 };
@@ -66,24 +75,37 @@ async function handleSyncFlights(apiToken) {
     );
 
     if (!response.ok) {
-      throw new Error(`Skydio API error: ${response.status} ${response.statusText}`);
+      const errorBody = await response.text();
+      console.error('Skydio API error:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorBody,
+        page: page
+      });
+      throw new Error(`Skydio API error: ${response.status} ${response.statusText} - ${errorBody}`);
     }
 
     const data = await response.json();
     
     // Transform to simplified format for History tab
+    // Match frontend schema: created_at, duration_seconds, name
     const flights = data.data.map(flight => ({
       id: flight.id,
-      aircraft: flight.aircraft_model,
-      startTime: flight.start_time,
-      endTime: flight.end_time,
-      duration: flight.duration_sec,
-      maxAltitude: flight.max_altitude_m,
-      maxSpeed: flight.max_speed_mps,
-      batteryUsed: flight.avg_battery_pct,
+      name: `${flight.aircraft_model || 'Drone'} Flight`, // Generate name from aircraft
+      created_at: flight.start_time,
+      duration_seconds: flight.duration_sec,
       location: {
         lat: flight.location_summary?.launch_lat,
         lon: flight.location_summary?.launch_lon,
+      },
+      media_urls: [], // Will be populated by separate media fetch
+      // Additional metadata for future use
+      metadata: {
+        aircraft: flight.aircraft_model,
+        endTime: flight.end_time,
+        maxAltitude: flight.max_altitude_m,
+        maxSpeed: flight.max_speed_mps,
+        batteryUsed: flight.avg_battery_pct,
       },
       synced: true, // Flag to distinguish from manual entries
     }));
@@ -127,10 +149,22 @@ async function handleFlightDetails(flightId, apiToken) {
   ]);
 
   if (!flightResponse.ok) {
-    throw new Error(`Failed to fetch flight: ${flightResponse.status}`);
+    const errorBody = await flightResponse.text();
+    console.error('Flight details error:', {
+      flightId,
+      status: flightResponse.status,
+      body: errorBody
+    });
+    throw new Error(`Failed to fetch flight: ${flightResponse.status} - ${errorBody}`);
   }
   if (!telemetryResponse.ok) {
-    throw new Error(`Failed to fetch telemetry: ${telemetryResponse.status}`);
+    const errorBody = await telemetryResponse.text();
+    console.error('Telemetry error:', {
+      flightId,
+      status: telemetryResponse.status,
+      body: errorBody
+    });
+    throw new Error(`Failed to fetch telemetry: ${telemetryResponse.status} - ${errorBody}`);
   }
 
   const flightData = await flightResponse.json();
@@ -189,7 +223,13 @@ async function handleFlightMedia(flightId, apiToken) {
   );
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch media: ${response.status}`);
+    const errorBody = await response.text();
+    console.error('Media fetch error:', {
+      flightId,
+      status: response.status,
+      body: errorBody
+    });
+    throw new Error(`Failed to fetch media: ${response.status} - ${errorBody}`);
   }
 
   const data = await response.json();
