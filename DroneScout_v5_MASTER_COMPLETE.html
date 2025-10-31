@@ -1494,7 +1494,9 @@
                             </button>
                         </div>
 
-                        <div id="spotsMap" style="height: 300px; border-radius: 12px; overflow: hidden; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);"></div>
+                        <div style="margin-bottom: 20px; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <div id="spotsMap" style="height: 300px; width: 100%; background: #f0f0f0;"></div>
+                        </div>
 
                         ${displaySpots.length === 0 ? `
                             <div class="card" style="text-align: center; padding: 40px 20px;">
@@ -1689,8 +1691,9 @@
                     // Add spot markers
                     state.spots.forEach(spot => {
                         if (spot.coordinates) {
-                            const markerColor = spot.riskScore >= 75 ? '#28a745' :
-                                              spot.riskScore >= 50 ? '#ffc107' : '#dc3545';
+                            const riskScore = getAdjustedRiskScore(spot);
+                            const markerColor = riskScore >= 75 ? '#28a745' :
+                                              riskScore >= 50 ? '#ffc107' : '#dc3545';
                             L.circleMarker([spot.coordinates.lat, spot.coordinates.lng], {
                                 radius: 8,
                                 fillColor: markerColor,
