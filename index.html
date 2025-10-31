@@ -1433,6 +1433,7 @@
                             const processedFlight = {
                                 id: flight.id,
                                 type: 'synced',
+                                synced: true, // V7.1: Flag for showing "View Flight Path" button
                                 name: flight.name || `Flight ${new Date(flight.created_at).toLocaleDateString()}`,
                                 date: flight.created_at,
                                 duration: flight.duration_seconds,
