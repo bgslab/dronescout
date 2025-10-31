@@ -1648,14 +1648,22 @@
 
             // Initialize map with spots and user location
             function initMap() {
-                if (state.spots.length === 0) return;
+                console.log('🗺️ initMap called, spots:', state.spots.length);
+                if (state.spots.length === 0) {
+                    console.log('No spots to display on map');
+                    return;
+                }
                 if (typeof L === 'undefined') {
-                    console.warn('Leaflet library not loaded, skipping map');
+                    console.warn('Leaflet library not loaded, skipping map (mobile device?)');
                     return;
                 }
 
                 const container = document.getElementById('spotsMap');
-                if (!container) return;
+                console.log('Map container found:', !!container, container);
+                if (!container) {
+                    console.error('❌ Map container #spotsMap not found in DOM');
+                    return;
+                }
 
                 try {
                     // Remove existing map if present
@@ -1689,6 +1697,7 @@
                     }
 
                     // Add spot markers
+                    let markersAdded = 0;
                     state.spots.forEach(spot => {
                         if (spot.coordinates) {
                             const riskScore = getAdjustedRiskScore(spot);
@@ -1702,8 +1711,10 @@
                                 opacity: 1,
                                 fillOpacity: 0.8
                             }).addTo(state.map).bindPopup(`<strong>${spot.name}</strong><br>${spot.distance || ''}`);
+                            markersAdded++;
                         }
                     });
+                    console.log('✅ Added', markersAdded, 'spot markers to map');
 
                     // Fit bounds to show all markers
                     const allPoints = [];
@@ -1720,8 +1731,10 @@
                         const bounds = L.latLngBounds(allPoints);
                         state.map.fitBounds(bounds, { padding: [50, 50] });
                     }
+
+                    console.log('✅ Map initialized successfully!');
                 } catch (error) {
-                    console.error('Map initialization failed:', error);
+                    console.error('❌ Map initialization failed:', error);
                 }
             }
 
