@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout v5 - Complete</title>
-    <!-- Conditional Leaflet loading: Desktop only, mobile skips maps for instant load -->
-    <script>
-        if (!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-            document.write('<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">');
-            document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>');
-        }
-    </script>
+    <title>DroneScout v6 - Map Loading Fixed</title>
+    <!-- V6 Fix: Proper Leaflet loading on ALL devices (no conditional loading) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * {
@@ -817,8 +817,8 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout v5</h1>
-            <p>Plan • Assess • Fly • Sync • Analyze</p>
+            <h1>🚁 DroneScout v6</h1>
+            <p>Plan • Map • Assess • Fly • Sync • Analyze</p>
         </div>
 
         <div class="nav-tabs">
@@ -883,7 +883,12 @@
                     connectionStatus: 'checking'
                 },
                 syncMessage: null,
-                expandedFlight: null
+                expandedFlight: null,
+                // V6: Map state
+                map: null,
+                mapMarkers: [],
+                destinationCoords: null,
+                userLocation: null
             };
 
             // LocalStorage helpers
@@ -995,6 +1000,70 @@
                 }
             ];
 
+            // Unsplash API configuration
+            const UNSPLASH_API_KEY = 'sbSNYWhhxX0eqabqOvhHgxWpNazawrNtcdoGN6QLaM8s';
+
+            // Fetch real images from Unsplash API (location-specific)
+            async function fetchUnsplashImage(category, locationName = '', spotName = '') {
+                try {
+                    // Extract city/location name from full location (e.g., "San Francisco" from "San Francisco, CA, USA")
+                    let cityName = locationName;
+                    if (locationName.includes(',')) {
+                        cityName = locationName.split(',')[0].trim();
+                    }
+
+                    // Map categories to search terms
+                    const categoryTerms = {
+                        viewpoint: 'cityscape skyline',
+                        water: 'waterfront bay harbor',
+                        park: 'park nature',
+                        nature: 'nature landscape',
+                        architecture: 'architecture landmark',
+                        landscape: 'landscape vista'
+                    };
+
+                    const categoryTerm = categoryTerms[category] || categoryTerms.landscape;
+
+                    // Combine location + category for location-specific images
+                    // e.g., "San Francisco cityscape" or "Yosemite mountain landscape"
+                    const query = cityName ? `${cityName} ${categoryTerm}` : categoryTerm;
+
+                    const url = `https://api.unsplash.com/photos/random?query=${encodeURIComponent(query)}&orientation=landscape`;
+
+                    console.log(`Fetching image for: "${query}"`);
+
+                    const response = await fetch(url, {
+                        headers: {
+                            'Authorization': `Client-ID ${UNSPLASH_API_KEY}`
+                        }
+                    });
+
+                    if (!response.ok) {
+                        console.warn('Unsplash API error, using fallback image');
+                        return getFallbackImage(category);
+                    }
+
+                    const data = await response.json();
+                    return data.urls.regular || data.urls.small;
+                } catch (error) {
+                    console.error('Unsplash fetch error:', error);
+                    return getFallbackImage(category);
+                }
+            }
+
+            // Fallback images if Unsplash fails
+            function getFallbackImage(category) {
+                const fallbackImages = {
+                    viewpoint: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80',
+                    water: 'https://images.unsplash.com/photo-1439066615861-d1af74d74000?w=800&q=80',
+                    park: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&q=80',
+                    nature: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=800&q=80',
+                    architecture: 'https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?w=800&q=80',
+                    landscape: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&q=80'
+                };
+                return fallbackImages[category] || fallbackImages.landscape;
+            }
+
             // Nominatim Geocoding API functions
             async function geocodeLocation(locationQuery) {
                 try {
@@ -1024,7 +1093,7 @@
             }
 
             // Overpass API POI search functions
-            async function searchPOIsNearLocation(lat, lng, radiusKm = 10) {
+            async function searchPOIsNearLocation(lat, lng, radiusKm = 10, locationName = '') {
                 try {
                     // Overpass query for scenic locations: parks, viewpoints, peaks, lakes, nature reserves
                     const query = `
@@ -1053,18 +1122,21 @@
                     if (!response.ok) throw new Error('Overpass API failed');
 
                     const data = await response.json();
-                    return processPOIs(data.elements, lat, lng);
+                    return await processPOIs(data.elements, lat, lng, locationName);
                 } catch (error) {
                     console.error('POI search error:', error);
                     return [];
                 }
             }
 
-            // Process POIs into spot format
-            function processPOIs(elements, centerLat, centerLng) {
+            // Process POIs into spot format (async to fetch real images)
+            async function processPOIs(elements, centerLat, centerLng, locationName = '') {
                 const spots = [];
 
-                elements.forEach((element, index) => {
+                // Process each element and fetch images
+                for (let index = 0; index < elements.length; index++) {
+                    const element = elements[index];
+
                     // Get coordinates (handle nodes and ways differently)
                     let poiLat, poiLng;
                     if (element.lat && element.lon) {
@@ -1074,7 +1146,7 @@
                         poiLat = element.center.lat;
                         poiLng = element.center.lon;
                     } else {
-                        return; // Skip if no coordinates
+                        continue; // Skip if no coordinates
                     }
 
                     // Calculate distance
@@ -1085,8 +1157,8 @@
                     const spotType = determineSpotType(tags);
                     const name = tags.name || `${spotType.name} ${index + 1}`;
 
-                    // Generate image URL based on type
-                    const imageUrl = getImageForSpotType(spotType.category);
+                    // Fetch real image from Unsplash with location context
+                    const imageUrl = await fetchUnsplashImage(spotType.category, locationName, name);
 
                     spots.push({
                         id: element.id || Date.now() + index,
@@ -1117,7 +1189,7 @@
                             conditions: "Verify before flight"
                         }
                     });
-                });
+                }
 
                 // Sort by distance
                 return spots.sort((a, b) => {
@@ -1370,6 +1442,178 @@
                 });
             }
 
+            // V6: Map initialization and management
+            function initMap() {
+                // Check if Leaflet is loaded
+                if (typeof L === 'undefined') {
+                    console.error('Leaflet not loaded');
+                    return;
+                }
+
+                const mapContainer = document.getElementById('mapContainer');
+                if (!mapContainer) {
+                    console.error('Map container not found');
+                    return;
+                }
+
+                console.log('Initializing map with', state.spots.length, 'spots');
+
+                // Remove existing map if it exists
+                if (state.map) {
+                    state.map.remove();
+                    state.map = null;
+                }
+
+                // Clear existing markers
+                state.mapMarkers = [];
+
+                // Use destination coords if available, otherwise center on first spot
+                let centerLat, centerLng, zoom;
+
+                if (state.destinationCoords) {
+                    centerLat = state.destinationCoords.lat;
+                    centerLng = state.destinationCoords.lng;
+                    zoom = 12;
+                } else if (state.spots.length > 0 && state.spots[0].coordinates) {
+                    // Use first spot's coordinates as fallback
+                    centerLat = state.spots[0].coordinates.lat || 40.7128;
+                    centerLng = state.spots[0].coordinates.lng || -74.0060;
+                    zoom = 12;
+                } else {
+                    // Default to NYC
+                    centerLat = 40.7128;
+                    centerLng = -74.0060;
+                    zoom = 10;
+                }
+
+                // Initialize the map
+                state.map = L.map('mapContainer').setView([centerLat, centerLng], zoom);
+
+                // Add OpenStreetMap tile layer
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                    maxZoom: 19
+                }).addTo(state.map);
+
+                // Add user location marker if available
+                if (state.userLocation) {
+                    const userMarker = L.marker([state.userLocation.lat, state.userLocation.lng], {
+                        icon: L.divIcon({
+                            className: 'custom-marker-user',
+                            html: '<div style="background: #4285f4; color: white; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 4px rgba(66, 133, 244, 0.3), 0 2px 8px rgba(0,0,0,0.3); border: 3px solid white;">📍</div>',
+                            iconSize: [26, 26],
+                            iconAnchor: [13, 13]
+                        })
+                    }).addTo(state.map);
+
+                    userMarker.bindPopup('<b>📍 Your Location</b>');
+                    state.mapMarkers.push(userMarker);
+                }
+
+                // Add destination marker if coords available
+                if (state.destinationCoords) {
+                    const destinationMarker = L.marker([state.destinationCoords.lat, state.destinationCoords.lng], {
+                        icon: L.divIcon({
+                            className: 'custom-marker-destination',
+                            html: '<div style="background: #00d4ff; color: white; padding: 8px 12px; border-radius: 20px; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">🎯 Destination</div>',
+                            iconSize: [130, 40],
+                            iconAnchor: [65, 40]
+                        })
+                    }).addTo(state.map);
+
+                    destinationMarker.bindPopup(`<b>${state.destination}</b><br>${state.destinationCoords.displayName || ''}`);
+                }
+
+                // Add markers for each spot
+                state.spots.forEach((spot, index) => {
+                    if (spot.coordinates && spot.coordinates.lat && spot.coordinates.lng) {
+                        console.log(`Adding marker ${index + 1} for ${spot.name} at [${spot.coordinates.lat}, ${spot.coordinates.lng}]`);
+                        const riskScore = getAdjustedRiskScore(spot);
+                        const riskClass = riskScore >= 75 ? 'high' : riskScore >= 50 ? 'medium' : 'low';
+                        const markerColor = riskScore >= 75 ? '#28a745' : riskScore >= 50 ? '#ffc107' : '#dc3545';
+
+                        const marker = L.marker([spot.coordinates.lat, spot.coordinates.lng], {
+                            icon: L.divIcon({
+                                className: 'custom-marker-spot',
+                                html: `<div style="background: ${markerColor}; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.3); border: 3px solid white;">${index + 1}</div>`,
+                                iconSize: [36, 36],
+                                iconAnchor: [18, 18]
+                            })
+                        }).addTo(state.map);
+
+                        // Create popup content
+                        const popupContent = `
+                            <div style="min-width: 200px;">
+                                <img src="${spot.imageUrl}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 8px; margin-bottom: 8px;" />
+                                <h4 style="margin: 0 0 5px 0; font-size: 14px;">${spot.name}</h4>
+                                <p style="margin: 0 0 5px 0; font-size: 12px; color: #666;">${spot.description}</p>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                                    <span style="font-size: 12px; color: #666;">📍 ${spot.distance}</span>
+                                    <span style="background: ${markerColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Score: ${riskScore}</span>
+                                </div>
+                                <button onclick="window.selectSpotFromMap('${spot.id}')" style="width: 100%; margin-top: 8px; padding: 8px; background: #1e3c72; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">View Details</button>
+                            </div>
+                        `;
+
+                        marker.bindPopup(popupContent, { maxWidth: 250 });
+
+                        // Click handler
+                        marker.on('click', function() {
+                            marker.openPopup();
+                        });
+
+                        state.mapMarkers.push(marker);
+                    }
+                });
+
+                // Fit bounds to show all markers if we have spots
+                if (state.spots.length > 0 && state.mapMarkers.length > 0) {
+                    const group = L.featureGroup(state.mapMarkers);
+                    state.map.fitBounds(group.getBounds().pad(0.1));
+                    console.log(`Map initialized successfully with ${state.mapMarkers.length} markers`);
+                } else {
+                    console.warn('No markers added to map. Spots:', state.spots.length, 'Markers:', state.mapMarkers.length);
+                }
+            }
+
+            // Global function to handle spot selection from map (called from popup button)
+            window.selectSpotFromMap = function(spotId) {
+                state.selectedSpot = spotId;
+                render();
+            };
+
+            // V6: Get user's current location
+            function getUserLocation() {
+                if ('geolocation' in navigator) {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            state.userLocation = {
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude,
+                                accuracy: position.coords.accuracy
+                            };
+                            console.log('User location obtained:', state.userLocation);
+
+                            // If map is already initialized, update it
+                            if (state.map && state.currentTab === 'planner' && state.spots.length > 0) {
+                                initMap();
+                            }
+                        },
+                        (error) => {
+                            console.warn('Geolocation error:', error.message);
+                            // Don't show error to user, just gracefully fail
+                        },
+                        {
+                            enableHighAccuracy: false,
+                            timeout: 5000,
+                            maximumAge: 300000 // Cache for 5 minutes
+                        }
+                    );
+                } else {
+                    console.warn('Geolocation not supported');
+                }
+            }
+
             // Render functions
             function render() {
                 const content = document.getElementById('content');
@@ -1378,6 +1622,10 @@
                     content.innerHTML = renderSpotDetail();
                 } else if (state.currentTab === 'planner') {
                     content.innerHTML = renderTripPlanner();
+                    // V6: Initialize map after rendering if spots exist
+                    if (state.spots.length > 0) {
+                        setTimeout(() => initMap(), 100);
+                    }
                 } else if (state.currentTab === 'upcoming') {
                     content.innerHTML = renderUpcoming();
                 } else if (state.currentTab === 'history') {
@@ -1483,6 +1731,11 @@
                     </div>
 
                     ${state.spots.length > 0 ? `
+                        <!-- Interactive Map -->
+                        <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 20px;">
+                            <div id="mapContainer" class="map-container" style="height: 400px; width: 100%;"></div>
+                        </div>
+
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                             <h2 style="font-size: 18px; font-weight: 700; color: #1e3c72; margin: 0;">
                                 📍 ${state.showFavoritesOnly ? 'Favorite' : 'Recommended'} Spots
@@ -1791,10 +2044,10 @@
                         <div class="settings-section">
                             <div class="settings-section-title">About</div>
                             <p style="font-size: 14px; color: #666; line-height: 1.6;">
-                                DroneScout v5 MASTER COMPLETE<br>
+                                DroneScout v5.4 - Real Images<br>
                                 Skydio X10 Optimized<br>
                                 Part 107 Certified<br>
-                                With Cloud Sync & Analytics
+                                With Unsplash API & Real Location Search
                             </p>
                         </div>
                     </div>
@@ -2028,8 +2281,11 @@
                                 const location = await geocodeLocation(state.destination);
 
                                 if (location) {
+                                    // V6: Save destination coordinates for map centering
+                                    state.destinationCoords = location;
+
                                     // Step 2: Search for POIs near the location
-                                    const pois = await searchPOIsNearLocation(location.lat, location.lng, 10);
+                                    const pois = await searchPOIsNearLocation(location.lat, location.lng, 10, location.displayName);
 
                                     if (pois && pois.length > 0) {
                                         // Success: Use real POI data
@@ -2043,11 +2299,13 @@
                                 } else {
                                     // Fallback: Geocoding failed, use hardcoded spots
                                     console.log('Geocoding failed, using fallback spots');
+                                    state.destinationCoords = null;
                                     state.spots = scenicSpots;
                                 }
                             } catch (error) {
                                 // Fallback: Error occurred, use hardcoded spots
                                 console.error('Location search error:', error);
+                                state.destinationCoords = null;
                                 state.spots = scenicSpots;
                             } finally {
                                 // Restore button state
@@ -2435,6 +2693,7 @@
 
             // Initial render
             checkConnection();
+            getUserLocation(); // V6: Request user's location for map
             render();
         }
     </script>
