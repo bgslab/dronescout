@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout v6 - Map Loading Fixed</title>
+    <title>DroneScout v6.1 - Enhanced Map Features</title>
     <!-- V6 Fix: Proper Leaflet loading on ALL devices (no conditional loading) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
@@ -11,7 +11,8 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
             crossorigin=""></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- V6.1: Updated to latest Chart.js version -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -817,8 +818,8 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout v6</h1>
-            <p>Plan • Map • Assess • Fly • Sync • Analyze</p>
+            <h1>🚁 DroneScout v6.1</h1>
+            <p>Plan • Map • Route • Assess • Fly • Sync • Analyze</p>
         </div>
 
         <div class="nav-tabs">
@@ -888,7 +889,11 @@
                 map: null,
                 mapMarkers: [],
                 destinationCoords: null,
-                userLocation: null
+                userLocation: null,
+                // V6.1: Route mode state
+                routeStartCoords: null,
+                routeEndCoords: null,
+                routePolyline: null
             };
 
             // LocalStorage helpers
@@ -1467,6 +1472,12 @@
                 // Clear existing markers
                 state.mapMarkers = [];
 
+                // V6.1: Remove existing route polyline if present
+                if (state.routePolyline) {
+                    state.routePolyline.remove();
+                    state.routePolyline = null;
+                }
+
                 // Use destination coords if available, otherwise center on first spot
                 let centerLat, centerLng, zoom;
 
@@ -1524,10 +1535,17 @@
                     destinationMarker.bindPopup(`<b>${state.destination}</b><br>${state.destinationCoords.displayName || ''}`);
                 }
 
+                // V6.1: Filter spots based on favorites toggle
+                const spotsToShow = state.showFavoritesOnly
+                    ? state.spots.filter(s => state.favorites.includes(s.id))
+                    : state.spots;
+
                 // Add markers for each spot
-                state.spots.forEach((spot, index) => {
+                let markerIndex = 0;
+                spotsToShow.forEach((spot) => {
                     if (spot.coordinates && spot.coordinates.lat && spot.coordinates.lng) {
-                        console.log(`Adding marker ${index + 1} for ${spot.name} at [${spot.coordinates.lat}, ${spot.coordinates.lng}]`);
+                        markerIndex++;
+                        console.log(`Adding marker ${markerIndex} for ${spot.name} at [${spot.coordinates.lat}, ${spot.coordinates.lng}]`);
                         const riskScore = getAdjustedRiskScore(spot);
                         const riskClass = riskScore >= 75 ? 'high' : riskScore >= 50 ? 'medium' : 'low';
                         const markerColor = riskScore >= 75 ? '#28a745' : riskScore >= 50 ? '#ffc107' : '#dc3545';
@@ -1535,7 +1553,7 @@
                         const marker = L.marker([spot.coordinates.lat, spot.coordinates.lng], {
                             icon: L.divIcon({
                                 className: 'custom-marker-spot',
-                                html: `<div style="background: ${markerColor}; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.3); border: 3px solid white;">${index + 1}</div>`,
+                                html: `<div style="background: ${markerColor}; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.3); border: 3px solid white;">${markerIndex}</div>`,
                                 iconSize: [36, 36],
                                 iconAnchor: [18, 18]
                             })
@@ -1565,6 +1583,47 @@
                         state.mapMarkers.push(marker);
                     }
                 });
+
+                // V6.1: Draw route polyline if in route mode
+                if (state.plannerMode === 'route' && state.routeStartCoords && state.routeEndCoords) {
+                    const routePoints = [
+                        [state.routeStartCoords.lat, state.routeStartCoords.lng],
+                        ...spotsToShow
+                            .filter(s => s.coordinates && s.coordinates.lat && s.coordinates.lng)
+                            .map(s => [s.coordinates.lat, s.coordinates.lng]),
+                        [state.routeEndCoords.lat, state.routeEndCoords.lng]
+                    ];
+
+                    state.routePolyline = L.polyline(routePoints, {
+                        color: '#1e3c72',
+                        weight: 3,
+                        opacity: 0.7,
+                        dashArray: '10, 10'
+                    }).addTo(state.map);
+
+                    // Add start/end markers
+                    const startMarker = L.marker([state.routeStartCoords.lat, state.routeStartCoords.lng], {
+                        icon: L.divIcon({
+                            className: 'custom-marker-route',
+                            html: '<div style="background: #28a745; color: white; padding: 6px 10px; border-radius: 15px; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 12px;">🏁 Start</div>',
+                            iconSize: [70, 30],
+                            iconAnchor: [35, 30]
+                        })
+                    }).addTo(state.map);
+                    startMarker.bindPopup(`<b>Start</b><br>${state.routeStart}`);
+
+                    const endMarker = L.marker([state.routeEndCoords.lat, state.routeEndCoords.lng], {
+                        icon: L.divIcon({
+                            className: 'custom-marker-route',
+                            html: '<div style="background: #dc3545; color: white; padding: 6px 10px; border-radius: 15px; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 12px;">🏁 End</div>',
+                            iconSize: [70, 30],
+                            iconAnchor: [35, 30]
+                        })
+                    }).addTo(state.map);
+                    endMarker.bindPopup(`<b>End</b><br>${state.routeEnd}`);
+
+                    console.log('Route polyline added with', routePoints.length, 'points');
+                }
 
                 // Fit bounds to show all markers if we have spots
                 if (state.spots.length > 0 && state.mapMarkers.length > 0) {
@@ -2323,6 +2382,10 @@
                     toggleFavoritesBtn.addEventListener('click', () => {
                         state.showFavoritesOnly = !state.showFavoritesOnly;
                         render();
+                        // V6.1: Re-initialize map to show only filtered spots
+                        if (state.spots.length > 0 && state.currentTab === 'planner') {
+                            setTimeout(() => initMap(), 100);
+                        }
                     });
                 }
 
@@ -2477,14 +2540,46 @@
                 // Route Mode search button
                 const findRouteSpotsBtn = document.getElementById('findRouteSpotsBtn');
                 if (findRouteSpotsBtn) {
-                    findRouteSpotsBtn.addEventListener('click', () => {
+                    findRouteSpotsBtn.addEventListener('click', async () => {
                         const startInput = document.getElementById('routeStartInput');
                         const endInput = document.getElementById('routeEndInput');
                         if (startInput && endInput && startInput.value && endInput.value) {
                             state.routeStart = startInput.value;
                             state.routeEnd = endInput.value;
-                            state.spots = scenicSpots;
-                            render();
+
+                            // V6.1: Geocode start and end locations for route polyline
+                            findRouteSpotsBtn.disabled = true;
+                            findRouteSpotsBtn.innerHTML = '<span class="spinner"></span> Searching...';
+
+                            try {
+                                const startLocation = await geocodeLocation(state.routeStart);
+                                const endLocation = await geocodeLocation(state.routeEnd);
+
+                                if (startLocation && endLocation) {
+                                    state.routeStartCoords = startLocation;
+                                    state.routeEndCoords = endLocation;
+
+                                    // Search for POIs along the route (use midpoint for now)
+                                    const midLat = (startLocation.lat + endLocation.lat) / 2;
+                                    const midLng = (startLocation.lng + endLocation.lng) / 2;
+                                    const pois = await searchPOIsNearLocation(midLat, midLng, 20, `${state.routeStart} to ${state.routeEnd}`);
+
+                                    state.spots = pois && pois.length > 0 ? pois : scenicSpots;
+                                } else {
+                                    state.routeStartCoords = null;
+                                    state.routeEndCoords = null;
+                                    state.spots = scenicSpots;
+                                }
+                            } catch (error) {
+                                console.error('Route geocoding error:', error);
+                                state.routeStartCoords = null;
+                                state.routeEndCoords = null;
+                                state.spots = scenicSpots;
+                            } finally {
+                                findRouteSpotsBtn.disabled = false;
+                                findRouteSpotsBtn.textContent = 'Find Spots Along Route';
+                                render();
+                            }
                         }
                     });
                 }
@@ -2677,6 +2772,7 @@
                 });
             }
 
+            // V6.1: Export flights data as CSV format
             function exportData() {
                 let csv = 'Date,Location,Duration,Type,Notes\n';
                 state.flights.forEach(flight => {
