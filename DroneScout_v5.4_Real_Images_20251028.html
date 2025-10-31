@@ -904,7 +904,212 @@
                 }
             }
 
-            // Demo data with full v2 features
+            // Comprehensive demo spots for multiple locations
+            const DEMO_SPOTS = [
+                // San Francisco, CA
+                {
+                    id: 101,
+                    location: "San Francisco",
+                    name: "Golden Gate Bridge Viewpoint",
+                    category: "viewpoint",
+                    description: "Iconic bridge spanning the bay with stunning aerial perspectives. Perfect for wide-angle shots and cinematic reveals.",
+                    coordinates: { lat: 37.8199, lng: -122.4783 },
+                    flightInstructions: "Launch from Battery Spencer parking area. Fly heading south toward bridge. Maintain 200-300 ft AGL for optimal framing. Capture north tower perspectives and full span shots.",
+                    bestTime: "Golden hour for dramatic lighting",
+                    x10Advantage: "X10's advanced stabilization handles coastal winds. Nightsense captures stunning twilight shots with city lights.",
+                    riskScore: 75,
+                    shotTypes: { cityscape: 60, architecture: 30, landscape: 10, nature: 0 }
+                },
+                {
+                    id: 102,
+                    location: "San Francisco",
+                    name: "Fisherman's Wharf Waterfront",
+                    category: "water",
+                    description: "Historic waterfront with pier structures and bay views. Great for harbor and maritime shots.",
+                    coordinates: { lat: 37.8080, lng: -122.4177 },
+                    flightInstructions: "Launch from Hyde Street Pier area. Fly low (100-150 ft AGL) parallel to waterfront. Capture pier 39, boats, and bay reflections.",
+                    bestTime: "Early morning for calm water",
+                    x10Advantage: "Elite obstacle avoidance navigates pier structures safely. Extended range covers entire wharf area.",
+                    riskScore: 70,
+                    shotTypes: { water: 50, cityscape: 30, architecture: 20, nature: 0 }
+                },
+                {
+                    id: 103,
+                    location: "San Francisco",
+                    name: "Twin Peaks Overlook",
+                    category: "viewpoint",
+                    description: "Elevated viewpoint with 360° city panoramas. Stunning aerial perspectives of downtown and bay.",
+                    coordinates: { lat: 37.7544, lng: -122.4477 },
+                    flightInstructions: "Launch from summit parking area. Ascend to 250-350 ft AGL for cityscape shots. Capture downtown, bay, and surrounding neighborhoods.",
+                    bestTime: "Blue hour for city lights",
+                    x10Advantage: "Nightsense enables twilight cityscape shots. Advanced autonomy handles wind currents at elevation.",
+                    riskScore: 80,
+                    shotTypes: { cityscape: 70, landscape: 20, nature: 10, architecture: 0 }
+                },
+                // Yosemite National Park
+                {
+                    id: 201,
+                    location: "Yosemite",
+                    name: "Half Dome Viewpoint",
+                    category: "viewpoint",
+                    description: "Iconic granite dome with valley floor perspectives. Dramatic vertical rock faces and waterfalls.",
+                    coordinates: { lat: 37.7459, lng: -119.5332 },
+                    flightInstructions: "Launch from Glacier Point area. Fly toward Half Dome maintaining safe distance. Capture vertical rock face and valley context shots at 300-400 ft AGL.",
+                    bestTime: "Golden hour for enhanced granite textures",
+                    x10Advantage: "Superior range enables distant landmark shots. Nightsense captures alpenglow on granite faces.",
+                    riskScore: 85,
+                    shotTypes: { nature: 60, landscape: 40, cityscape: 0, architecture: 0 }
+                },
+                {
+                    id: 202,
+                    location: "Yosemite",
+                    name: "Yosemite Valley Floor",
+                    category: "nature",
+                    description: "Scenic valley with meadows, forests, and granite cliffs. Excellent for wide landscape shots.",
+                    coordinates: { lat: 37.7455, lng: -119.5937 },
+                    flightInstructions: "Launch from Valley View parking. Fly low (150-200 ft AGL) along meadow. Capture El Capitan, Cathedral Rocks, and forest canopy.",
+                    bestTime: "Morning light for valley illumination",
+                    x10Advantage: "Advanced obstacle avoidance navigates trees safely. BVLOS capability covers expansive valley floor.",
+                    riskScore: 90,
+                    shotTypes: { nature: 70, landscape: 30, cityscape: 0, architecture: 0 }
+                },
+                {
+                    id: 203,
+                    location: "Yosemite",
+                    name: "Merced River Waterfront",
+                    category: "water",
+                    description: "Pristine river with reflections of surrounding cliffs. Perfect for water and landscape combinations.",
+                    coordinates: { lat: 37.7483, lng: -119.5871 },
+                    flightInstructions: "Launch from riverbank access points. Fly low (50-100 ft AGL) parallel to river. Capture reflections, rapids, and riverside vegetation.",
+                    bestTime: "Dawn for mirror-like water reflections",
+                    x10Advantage: "Precision flight control enables low-altitude river tracking. Nightsense captures pre-dawn alpenglow reflections.",
+                    riskScore: 88,
+                    shotTypes: { water: 50, nature: 40, landscape: 10, cityscape: 0 }
+                },
+                // New York City
+                {
+                    id: 301,
+                    location: "New York",
+                    name: "Brooklyn Bridge Park",
+                    category: "viewpoint",
+                    description: "Waterfront park with Manhattan skyline and iconic bridge views. Perfect for urban landscape shots.",
+                    coordinates: { lat: 40.7024, lng: -73.9969 },
+                    flightInstructions: "Launch from designated park areas. Fly toward Manhattan at 200-300 ft AGL. Capture bridge spans, skyline, and East River.",
+                    bestTime: "Blue hour for city lights",
+                    x10Advantage: "Nightsense excels at twilight urban shots. Elite avoidance navigates complex airspace safely.",
+                    riskScore: 65,
+                    shotTypes: { cityscape: 70, architecture: 25, water: 5, nature: 0 }
+                },
+                {
+                    id: 302,
+                    location: "New York",
+                    name: "Central Park Reservoir",
+                    category: "park",
+                    description: "Urban oasis with water features and greenspace. Great for nature-meets-city shots.",
+                    coordinates: { lat: 40.7829, lng: -73.9654 },
+                    flightInstructions: "Launch from designated park zones. Fly over reservoir at 150-250 ft AGL. Capture water reflections with skyline backdrop.",
+                    bestTime: "Golden hour for warm tones",
+                    x10Advantage: "Extended flight time covers large park area. Autonomous tracking follows runners and cyclists safely.",
+                    riskScore: 70,
+                    shotTypes: { park: 50, water: 30, cityscape: 15, nature: 5 }
+                },
+                // Los Angeles
+                {
+                    id: 401,
+                    location: "Los Angeles",
+                    name: "Griffith Observatory Viewpoint",
+                    category: "viewpoint",
+                    description: "Elevated overlook with panoramic LA basin and Hollywood Sign views. Iconic aerial perspectives.",
+                    coordinates: { lat: 34.1184, lng: -118.3004 },
+                    flightInstructions: "Launch from parking areas. Ascend to 300-400 ft AGL for city panoramas. Capture downtown LA, Hollywood Hills, and Pacific Ocean on clear days.",
+                    bestTime: "Sunset for dramatic lighting",
+                    x10Advantage: "Nightsense captures city lights transition. Superior range reaches distant landmarks.",
+                    riskScore: 75,
+                    shotTypes: { cityscape: 60, landscape: 30, architecture: 10, nature: 0 }
+                },
+                {
+                    id: 402,
+                    location: "Los Angeles",
+                    name: "Venice Beach Waterfront",
+                    category: "water",
+                    description: "Iconic beach with pier, boardwalk, and Pacific Ocean. Great for coastal and urban beach shots.",
+                    coordinates: { lat: 33.9850, lng: -118.4695 },
+                    flightInstructions: "Launch from designated beach zones. Fly parallel to shoreline at 100-200 ft AGL. Capture waves, pier structure, and beachfront.",
+                    bestTime: "Golden hour for warm ocean tones",
+                    x10Advantage: "Advanced stabilization handles ocean breeze. Water-resistant design provides peace of mind.",
+                    riskScore: 80,
+                    shotTypes: { water: 60, nature: 20, cityscape: 15, architecture: 5 }
+                },
+                // Seattle
+                {
+                    id: 501,
+                    location: "Seattle",
+                    name: "Space Needle Viewpoint",
+                    category: "architecture",
+                    description: "Iconic landmark with city skyline and Puget Sound backdrop. Perfect for architectural and urban shots.",
+                    coordinates: { lat: 47.6205, lng: -122.3493 },
+                    flightInstructions: "Launch from designated areas. Maintain distance from structure. Capture at 300-350 ft AGL for landmark and skyline context.",
+                    bestTime: "Blue hour for illuminated landmark",
+                    x10Advantage: "Precision hovering enables stable architectural shots. Nightsense captures twilight illumination perfectly.",
+                    riskScore: 70,
+                    shotTypes: { architecture: 60, cityscape: 30, water: 10, nature: 0 }
+                },
+                {
+                    id: 502,
+                    location: "Seattle",
+                    name: "Pike Place Market Waterfront",
+                    category: "water",
+                    description: "Historic market area with Elliott Bay views. Mix of urban and waterfront elements.",
+                    coordinates: { lat: 47.6097, lng: -122.3421 },
+                    flightInstructions: "Launch from waterfront parks. Fly low (100-150 ft AGL) along bay. Capture market, piers, and ferry traffic.",
+                    bestTime: "Morning for market activity",
+                    x10Advantage: "Elite avoidance handles pedestrian areas safely. Extended range covers multiple piers.",
+                    riskScore: 68,
+                    shotTypes: { water: 40, cityscape: 35, architecture: 25, nature: 0 }
+                },
+                // Generic fallback spots
+                {
+                    id: 901,
+                    location: "Generic",
+                    name: "Urban Park Overlook",
+                    category: "park",
+                    description: "City park with mixed greenspace and urban elements. Versatile for various shot types.",
+                    coordinates: { lat: 40.7589, lng: -73.9851 },
+                    flightInstructions: "Launch from designated park areas. Mix altitudes for varied perspectives: 100 ft for detail, 200 ft for context, 300 ft for establishing shots.",
+                    bestTime: "Golden hour",
+                    x10Advantage: "Autonomous subject tracking. Advanced avoidance handles trees and structures.",
+                    riskScore: 75,
+                    shotTypes: { park: 50, nature: 25, cityscape: 20, architecture: 5 }
+                },
+                {
+                    id: 902,
+                    location: "Generic",
+                    name: "Scenic Waterfront",
+                    category: "water",
+                    description: "Waterfront area with reflective surfaces and natural beauty. Perfect for sunrise/sunset shots.",
+                    coordinates: { lat: 37.7749, lng: -122.4194 },
+                    flightInstructions: "Launch from shoreline. Fly low (50-150 ft AGL) to capture reflections. Use slow tracking shots parallel to water.",
+                    bestTime: "Dawn or dusk for reflections",
+                    x10Advantage: "Nightsense enables low-light water shots. Precision control for reflection capture.",
+                    riskScore: 85,
+                    shotTypes: { water: 60, nature: 30, landscape: 10, cityscape: 0 }
+                },
+                {
+                    id: 903,
+                    location: "Generic",
+                    name: "Downtown Skyline Viewpoint",
+                    category: "viewpoint",
+                    description: "Elevated position with city panoramas. Excellent for urban landscape and architecture shots.",
+                    coordinates: { lat: 40.7128, lng: -74.0060 },
+                    flightInstructions: "Ascend to 250-350 ft AGL for cityscape shots. Capture varied angles: straight, orbit, and reveal movements.",
+                    bestTime: "Blue hour for city lights",
+                    x10Advantage: "Nightsense captures twilight transitions. Superior range reaches distant buildings.",
+                    riskScore: 72,
+                    shotTypes: { cityscape: 70, architecture: 20, landscape: 10, nature: 0 }
+                }
+            ];
+
+            // Legacy scenic spots for backward compatibility
             const scenicSpots = [
                 {
                     id: 1,
@@ -1025,7 +1230,8 @@
 
                     const url = `https://api.unsplash.com/photos/random?query=${encodeURIComponent(query)}&orientation=landscape`;
 
-                    console.log(`Fetching image for: "${query}"`);
+                    console.log(`Fetching Unsplash image for: "${query}"`);
+                    console.log(`Authorization: Client-ID ${UNSPLASH_API_KEY.substring(0, 10)}...`);
 
                     const response = await fetch(url, {
                         headers: {
@@ -1034,7 +1240,9 @@
                     });
 
                     if (!response.ok) {
-                        console.warn('Unsplash API error, using fallback image');
+                        const errorText = await response.text();
+                        console.error(`Unsplash API error (${response.status}):`, errorText);
+                        console.warn('Using fallback image');
                         return getFallbackImage(category);
                     }
 
@@ -1087,39 +1295,70 @@
                 }
             }
 
-            // Overpass API POI search functions
-            async function searchPOIsNearLocation(lat, lng, radiusKm = 10, locationName = '') {
+            // Search demo spots by location name
+            async function searchDemoSpotsByLocation(locationName = '') {
                 try {
-                    // Overpass query for scenic locations: parks, viewpoints, peaks, lakes, nature reserves
-                    const query = `
-                        [out:json][timeout:25];
-                        (
-                          node["tourism"="viewpoint"](around:${radiusKm * 1000},${lat},${lng});
-                          node["natural"="peak"](around:${radiusKm * 1000},${lat},${lng});
-                          way["leisure"="park"](around:${radiusKm * 1000},${lat},${lng});
-                          way["natural"="water"](around:${radiusKm * 1000},${lat},${lng});
-                          way["leisure"="nature_reserve"](around:${radiusKm * 1000},${lat},${lng});
-                          node["natural"="beach"](around:${radiusKm * 1000},${lat},${lng});
-                          way["landuse"="forest"](around:${radiusKm * 1000},${lat},${lng});
-                          node["man_made"="tower"]["tower:type"="observation"](around:${radiusKm * 1000},${lat},${lng});
-                        );
-                        out center 30;
-                    `;
+                    // Extract city/location name from full location string
+                    let searchTerm = locationName;
+                    if (locationName.includes(',')) {
+                        searchTerm = locationName.split(',')[0].trim();
+                    }
 
-                    const response = await fetch('https://overpass-api.de/api/interpreter', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded'
-                        },
-                        body: 'data=' + encodeURIComponent(query)
-                    });
+                    console.log(`Searching DEMO_SPOTS for: "${searchTerm}"`);
 
-                    if (!response.ok) throw new Error('Overpass API failed');
+                    // Find matching spots (case-insensitive)
+                    let matchedSpots = DEMO_SPOTS.filter(spot =>
+                        spot.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        searchTerm.toLowerCase().includes(spot.location.toLowerCase())
+                    );
 
-                    const data = await response.json();
-                    return await processPOIs(data.elements, lat, lng, locationName);
+                    // If no matches, use generic fallback spots
+                    if (matchedSpots.length === 0) {
+                        console.log('No location match found, using generic spots');
+                        matchedSpots = DEMO_SPOTS.filter(spot => spot.location === 'Generic');
+                    }
+
+                    console.log(`Found ${matchedSpots.length} demo spots`);
+
+                    // Fetch real Unsplash images for each spot
+                    const spotsWithImages = [];
+                    for (const spot of matchedSpots) {
+                        const imageUrl = await fetchUnsplashImage(spot.category, spot.location, spot.name);
+
+                        spotsWithImages.push({
+                            id: spot.id,
+                            name: spot.name,
+                            description: spot.description,
+                            coordinates: spot.coordinates,
+                            imageUrl: imageUrl,
+                            flightInstructions: spot.flightInstructions,
+                            bestTime: spot.bestTime,
+                            x10Advantage: spot.x10Advantage,
+                            distance: `${Math.random() * 10 + 1 | 0}.${Math.random() * 10 | 0} mi`, // Simulated distance
+                            riskScore: spot.riskScore,
+                            shotTypes: spot.shotTypes,
+                            airspaceDetails: {
+                                class: "Class G (Uncontrolled)",
+                                ceiling: "Up to 400 ft AGL authorized",
+                                laancRequired: "Check local requirements",
+                                nearestAirport: "Verify on SkyVector/B4UFLY"
+                            },
+                            regulations: [
+                                { authority: "FAA Part 107", rule: "Visual line of sight required (unless BVLOS waiver)", compliant: true },
+                                { authority: "Local Authority", rule: "Verify local drone regulations before flight", compliant: true }
+                            ],
+                            weatherConditions: {
+                                wind: "Check current conditions",
+                                visibility: "Check current conditions",
+                                temp: "Check current conditions",
+                                conditions: "Verify before flight"
+                            }
+                        });
+                    }
+
+                    return spotsWithImages;
                 } catch (error) {
-                    console.error('POI search error:', error);
+                    console.error('Demo spot search error:', error);
                     return [];
                 }
             }
@@ -2091,30 +2330,21 @@
                             findSpotsBtn.innerHTML = '<span class="spinner"></span> Searching...';
 
                             try {
-                                // Step 1: Geocode the location
-                                const location = await geocodeLocation(state.destination);
+                                // Search DEMO_SPOTS by location name
+                                const demoSpots = await searchDemoSpotsByLocation(state.destination);
 
-                                if (location) {
-                                    // Step 2: Search for POIs near the location
-                                    const pois = await searchPOIsNearLocation(location.lat, location.lng, 10, location.displayName);
-
-                                    if (pois && pois.length > 0) {
-                                        // Success: Use real POI data
-                                        state.spots = pois;
-                                        console.log(`Found ${pois.length} real locations near ${location.displayName}`);
-                                    } else {
-                                        // Fallback: No POIs found, use hardcoded spots
-                                        console.log('No POIs found, using fallback spots');
-                                        state.spots = scenicSpots;
-                                    }
+                                if (demoSpots && demoSpots.length > 0) {
+                                    // Success: Use demo spots with real Unsplash images
+                                    state.spots = demoSpots;
+                                    console.log(`Found ${demoSpots.length} demo spots for "${state.destination}"`);
                                 } else {
-                                    // Fallback: Geocoding failed, use hardcoded spots
-                                    console.log('Geocoding failed, using fallback spots');
+                                    // Fallback: No matches, use legacy scenic spots
+                                    console.log('No demo spots found, using legacy scenic spots');
                                     state.spots = scenicSpots;
                                 }
                             } catch (error) {
-                                // Fallback: Error occurred, use hardcoded spots
-                                console.error('Location search error:', error);
+                                // Fallback: Error occurred, use legacy spots
+                                console.error('Demo spot search error:', error);
                                 state.spots = scenicSpots;
                             } finally {
                                 // Restore button state
