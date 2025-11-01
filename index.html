@@ -1604,34 +1604,52 @@
                     mapContainer.style.height = '400px';
                     mapContainer.style.width = '100%';
                     mapContainer.style.position = 'relative';
+                    mapContainer.style.display = 'block';
 
-                    // Create map
-                    state.map = L.map('mapContainer', {
-                        preferCanvas: false,
-                        renderer: L.canvas()
-                    }).setView([firstPoint.lat, firstPoint.lon], 13);
+                    console.log('Map container dimensions:', {
+                        height: mapContainer.offsetHeight,
+                        width: mapContainer.offsetWidth,
+                        visible: mapContainer.offsetParent !== null
+                    });
 
-                    // Add tile layer and wait for it to load
+                    // Create map with simple options
+                    state.map = L.map('mapContainer').setView([firstPoint.lat, firstPoint.lon], 13);
+                    console.log('Map instance created');
+
+                    // Add tile layer with error handling
                     const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-                        maxZoom: 19
+                        maxZoom: 19,
+                        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' // 1x1 gray pixel fallback
                     });
 
-                    // Wait for tiles to actually load
-                    await new Promise(resolve => {
-                        tileLayer.on('load', () => {
-                            console.log('Tiles loaded successfully');
-                            resolve();
-                        });
-                        tileLayer.addTo(state.map);
-                        // Fallback timeout in case 'load' never fires
-                        setTimeout(resolve, 2000);
+                    // Debug tile loading
+                    let tilesLoaded = 0;
+                    let tilesFailed = 0;
+
+                    tileLayer.on('tileload', (e) => {
+                        tilesLoaded++;
+                        console.log('Tile loaded:', tilesLoaded, 'URL:', e.url);
                     });
 
-                    // Force map to recognize its container size multiple times
+                    tileLayer.on('tileerror', (e) => {
+                        tilesFailed++;
+                        console.error('Tile failed to load:', tilesFailed, 'URL:', e.url, 'Error:', e.error);
+                    });
+
+                    tileLayer.on('load', () => {
+                        console.log('All tiles loaded. Total:', tilesLoaded, 'Failed:', tilesFailed);
+                    });
+
+                    tileLayer.addTo(state.map);
+                    console.log('Tile layer added to map');
+
+                    // Wait for tiles to start loading
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // Force map to recognize its container size
                     state.map.invalidateSize();
-                    setTimeout(() => state.map.invalidateSize(), 100);
-                    setTimeout(() => state.map.invalidateSize(), 500);
+                    console.log('Map size invalidated');
 
                     console.log('Map created, drawing flight path with', details.telemetry.pointCount, 'points');
 
