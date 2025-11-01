@@ -1585,28 +1585,29 @@
                     state.currentTab = 'planner';
                     render();
 
-                    // Wait for DOM to be ready, then initialize map
+                    // Wait for DOM to be ready
                     await new Promise(resolve => setTimeout(resolve, 200));
 
+                    // If map already exists (from spot search), just use it!
+                    // Don't recreate the map - that's what causes the gray tiles
                     if (!state.map) {
                         console.log('Map not initialized, initializing now...');
                         initMap();
                         // Wait for map to fully initialize and tiles to start loading
                         await new Promise(resolve => setTimeout(resolve, 1000));
+
+                        // Ensure map exists and is ready
+                        if (!state.map) {
+                            state.syncMessage = { type: 'error', text: 'Failed to initialize map' };
+                            render();
+                            return;
+                        }
+                    } else {
+                        console.log('Using existing map for flight path');
                     }
 
-                    // Ensure map exists and is ready
-                    if (!state.map) {
-                        state.syncMessage = { type: 'error', text: 'Failed to initialize map' };
-                        render();
-                        return;
-                    }
-
-                    // Force map to recalculate size before drawing
+                    // Force map to recalculate size
                     state.map.invalidateSize();
-
-                    // Wait a moment for tiles to load
-                    await new Promise(resolve => setTimeout(resolve, 300));
 
                     // Clear existing layers and center on flight
                     if (state.map) {
