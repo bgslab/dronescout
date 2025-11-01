@@ -1574,40 +1574,41 @@
                         return;
                     }
 
-                    // Set a temporary flight location from telemetry to help map center
-                    const firstPoint = details.telemetry.track[0];
-                    state.destinationCoords = {
-                        lat: firstPoint.lat,
-                        lng: firstPoint.lon
-                    };
-
                     // Switch to planner tab and render
                     state.currentTab = 'planner';
                     render();
 
                     // Wait for DOM to be ready
-                    await new Promise(resolve => setTimeout(resolve, 200));
+                    await new Promise(resolve => setTimeout(resolve, 100));
 
-                    // If map already exists (from spot search), just use it!
-                    // Don't recreate the map - that's what causes the gray tiles
-                    if (!state.map) {
-                        console.log('Map not initialized, initializing now...');
-                        initMap();
-                        // Wait for map to fully initialize and tiles to start loading
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-
-                        // Ensure map exists and is ready
-                        if (!state.map) {
-                            state.syncMessage = { type: 'error', text: 'Failed to initialize map' };
-                            render();
-                            return;
-                        }
-                    } else {
-                        console.log('Using existing map for flight path');
+                    // Get map container
+                    const mapContainer = document.getElementById('mapContainer');
+                    if (!mapContainer) {
+                        state.syncMessage = { type: 'error', text: 'Map container not found' };
+                        render();
+                        return;
                     }
 
-                    // Force map to recalculate size
-                    state.map.invalidateSize();
+                    // Create a fresh map directly with flight coordinates
+                    if (state.map) {
+                        state.map.remove();
+                        state.map = null;
+                    }
+
+                    const firstPoint = details.telemetry.track[0];
+                    console.log('Creating new map centered at:', firstPoint.lat, firstPoint.lon);
+
+                    // Create map
+                    state.map = L.map('mapContainer').setView([firstPoint.lat, firstPoint.lon], 13);
+
+                    // Add tile layer
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                        maxZoom: 19
+                    }).addTo(state.map);
+
+                    // Wait for tiles to load
+                    await new Promise(resolve => setTimeout(resolve, 500));
 
                     // Clear existing layers and center on flight
                     if (state.map) {
