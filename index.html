@@ -1597,6 +1597,8 @@
 
                     // Clear existing layers and center on flight
                     if (state.map) {
+                        console.log('Drawing flight path with', details.telemetry.pointCount, 'points');
+
                         // Remove existing flight path layers
                         state.map.eachLayer(layer => {
                             if (layer.options && layer.options.className === 'flight-path') {
@@ -1606,6 +1608,7 @@
 
                         // Convert telemetry to LatLng array
                         const pathCoords = details.telemetry.track.map(point => [point.lat, point.lon]);
+                        console.log('Path coordinates:', pathCoords.length, 'First:', pathCoords[0], 'Last:', pathCoords[pathCoords.length-1]);
 
                         // Draw flight path on map
                         const flightPath = L.polyline(pathCoords, {
@@ -1614,6 +1617,8 @@
                             opacity: 0.8,
                             className: 'flight-path'
                         }).addTo(state.map);
+
+                        console.log('Flight path added to map');
 
                         // Add markers for takeoff and landing
                         const startPoint = pathCoords[0];
