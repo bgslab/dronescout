@@ -1591,9 +1591,22 @@
                     if (!state.map) {
                         console.log('Map not initialized, initializing now...');
                         initMap();
-                        // Wait for map to fully initialize
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        // Wait for map to fully initialize and tiles to start loading
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                     }
+
+                    // Ensure map exists and is ready
+                    if (!state.map) {
+                        state.syncMessage = { type: 'error', text: 'Failed to initialize map' };
+                        render();
+                        return;
+                    }
+
+                    // Force map to recalculate size before drawing
+                    state.map.invalidateSize();
+
+                    // Wait a moment for tiles to load
+                    await new Promise(resolve => setTimeout(resolve, 300));
 
                     // Clear existing layers and center on flight
                     if (state.map) {
