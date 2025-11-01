@@ -2004,11 +2004,12 @@
                         ` : ''}
                     </div>
 
+                    <!-- Interactive Map - Always show for V7.1 flight paths -->
+                    <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 20px;">
+                        <div id="mapContainer" class="map-container" style="height: 400px; width: 100%;"></div>
+                    </div>
+
                     ${state.spots.length > 0 ? `
-                        <!-- Interactive Map -->
-                        <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 20px;">
-                            <div id="mapContainer" class="map-container" style="height: 400px; width: 100%;"></div>
-                        </div>
 
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                             <h2 style="font-size: 18px; font-weight: 700; color: #1e3c72; margin: 0;">
