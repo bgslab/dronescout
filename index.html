@@ -1611,18 +1611,27 @@
                         renderer: L.canvas()
                     }).setView([firstPoint.lat, firstPoint.lon], 13);
 
-                    // Add tile layer
+                    // Add tile layer and wait for it to load
                     const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
                         maxZoom: 19
                     });
-                    tileLayer.addTo(state.map);
 
-                    // Force map to recognize its container size
+                    // Wait for tiles to actually load
+                    await new Promise(resolve => {
+                        tileLayer.on('load', () => {
+                            console.log('Tiles loaded successfully');
+                            resolve();
+                        });
+                        tileLayer.addTo(state.map);
+                        // Fallback timeout in case 'load' never fires
+                        setTimeout(resolve, 2000);
+                    });
+
+                    // Force map to recognize its container size multiple times
+                    state.map.invalidateSize();
                     setTimeout(() => state.map.invalidateSize(), 100);
-
-                    // Wait for tiles to start loading
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    setTimeout(() => state.map.invalidateSize(), 500);
 
                     console.log('Map created, drawing flight path with', details.telemetry.pointCount, 'points');
 
