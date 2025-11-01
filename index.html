@@ -1602,75 +1602,63 @@
                     state.map = L.map('mapContainer').setView([firstPoint.lat, firstPoint.lon], 13);
 
                     // Add tile layer
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
                         maxZoom: 19
-                    }).addTo(state.map);
+                    });
+                    tileLayer.addTo(state.map);
 
-                    // Wait for tiles to load
+                    // Force map to recognize its container size
+                    setTimeout(() => state.map.invalidateSize(), 100);
+
+                    // Wait for tiles to start loading
                     await new Promise(resolve => setTimeout(resolve, 500));
 
-                    // Clear existing layers and center on flight
-                    if (state.map) {
-                        console.log('Drawing flight path with', details.telemetry.pointCount, 'points');
+                    console.log('Map created, drawing flight path with', details.telemetry.pointCount, 'points');
 
-                        // Remove existing flight path layers
-                        state.map.eachLayer(layer => {
-                            if (layer.options && layer.options.className === 'flight-path') {
-                                state.map.removeLayer(layer);
-                            }
-                        });
+                    // Convert telemetry to LatLng array
+                    const pathCoords = details.telemetry.track.map(point => [point.lat, point.lon]);
+                    console.log('Path coordinates:', pathCoords.length, 'First:', pathCoords[0], 'Last:', pathCoords[pathCoords.length-1]);
 
-                        // Convert telemetry to LatLng array
-                        const pathCoords = details.telemetry.track.map(point => [point.lat, point.lon]);
-                        console.log('Path coordinates:', pathCoords.length, 'First:', pathCoords[0], 'Last:', pathCoords[pathCoords.length-1]);
+                    // Draw flight path on map BEFORE removing other layers
+                    const flightPath = L.polyline(pathCoords, {
+                        color: '#2563eb',
+                        weight: 3,
+                        opacity: 0.8,
+                        className: 'flight-path'
+                    }).addTo(state.map);
 
-                        // Draw flight path on map
-                        const flightPath = L.polyline(pathCoords, {
-                            color: '#2563eb',
-                            weight: 3,
-                            opacity: 0.8,
-                            className: 'flight-path'
-                        }).addTo(state.map);
+                    console.log('Flight path added to map');
 
-                        console.log('Flight path added to map');
+                    // Add markers for takeoff and landing
+                    const startPoint = pathCoords[0];
+                    const endPoint = pathCoords[pathCoords.length - 1];
 
-                        // Add markers for takeoff and landing
-                        const startPoint = pathCoords[0];
-                        const endPoint = pathCoords[pathCoords.length - 1];
+                    L.marker(startPoint, {
+                        icon: L.divIcon({
+                            html: '🛫',
+                            className: 'flight-marker',
+                            iconSize: [30, 30]
+                        })
+                    }).addTo(state.map).bindPopup(`<b>Takeoff</b><br>${details.flight.vehicleSerial}`);
 
-                        L.marker(startPoint, {
-                            icon: L.divIcon({
-                                html: '🛫',
-                                className: 'flight-marker',
-                                iconSize: [30, 30]
-                            })
-                        }).addTo(state.map).bindPopup(`<b>Takeoff</b><br>${details.flight.vehicleSerial}`);
+                    L.marker(endPoint, {
+                        icon: L.divIcon({
+                            html: '🛬',
+                            className: 'flight-marker',
+                            iconSize: [30, 30]
+                        })
+                    }).addTo(state.map).bindPopup(`<b>Landing</b><br>${details.flight.vehicleSerial}`);
 
-                        L.marker(endPoint, {
-                            icon: L.divIcon({
-                                html: '🛬',
-                                className: 'flight-marker',
-                                iconSize: [30, 30]
-                            })
-                        }).addTo(state.map).bindPopup(`<b>Landing</b><br>${details.flight.vehicleSerial}`);
+                    // Fit map to show entire flight path
+                    state.map.fitBounds(flightPath.getBounds(), { padding: [50, 50] });
 
-                        // Force map to recalculate size (fixes gray tiles issue)
+                    // Force another size recalculation after zoom
+                    setTimeout(() => {
                         state.map.invalidateSize();
+                    }, 100);
 
-                        // Fit map to show entire flight path
-                        state.map.fitBounds(flightPath.getBounds(), { padding: [50, 50] });
-
-                        // Force another size recalculation after zoom
-                        setTimeout(() => {
-                            state.map.invalidateSize();
-                        }, 100);
-
-                        state.syncMessage = { type: 'success', text: `Flight path loaded (${details.telemetry.pointCount} points)` };
-                    } else {
-                        state.syncMessage = { type: 'error', text: 'Map not initialized' };
-                    }
-
+                    state.syncMessage = { type: 'success', text: `Flight path loaded (${details.telemetry.pointCount} points)` };
                     render();
                 } catch (error) {
                     console.error('Error viewing flight path:', error);
