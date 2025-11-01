@@ -1640,8 +1640,16 @@
                             })
                         }).addTo(state.map).bindPopup(`<b>Landing</b><br>${details.flight.vehicleSerial}`);
 
+                        // Force map to recalculate size (fixes gray tiles issue)
+                        state.map.invalidateSize();
+
                         // Fit map to show entire flight path
                         state.map.fitBounds(flightPath.getBounds(), { padding: [50, 50] });
+
+                        // Force another size recalculation after zoom
+                        setTimeout(() => {
+                            state.map.invalidateSize();
+                        }, 100);
 
                         state.syncMessage = { type: 'success', text: `Flight path loaded (${details.telemetry.pointCount} points)` };
                     } else {
