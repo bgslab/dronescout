@@ -902,7 +902,9 @@
                 // V6.1: Route mode state
                 routeStartCoords: null,
                 routeEndCoords: null,
-                routePolyline: null
+                routePolyline: null,
+                // V9: Spot search center for preference ranking
+                searchCenter: null
             };
 
             // LocalStorage helpers
@@ -1378,6 +1380,81 @@
                 }
 
                 return baseScore;
+            }
+
+            // V9.0: Calculate preference match score for spot ranking
+            function calculatePreferenceMatch(shotTypes, preferences) {
+                if (!shotTypes || !preferences) return 50;
+
+                // Map slider values to shot type weights
+                // Cityscape slider: 0=landscape, 100=cityscape
+                const cityscapeWeight = preferences.cityscape / 100;
+                const landscapeWeight = (100 - preferences.cityscape) / 100;
+
+                // Nature slider: 0=architecture, 100=nature
+                const natureWeight = preferences.nature / 100;
+                const architectureWeight = (100 - preferences.nature) / 100;
+
+                // Calculate weighted match
+                const match =
+                    (shotTypes.cityscape || 0) * cityscapeWeight +
+                    (shotTypes.landscape || 0) * landscapeWeight +
+                    (shotTypes.nature || 0) * natureWeight +
+                    (shotTypes.architecture || 0) * architectureWeight;
+
+                // Normalize (shotTypes sum to ~100)
+                const totalShotTypeValue = Object.values(shotTypes).reduce((a, b) => a + b, 0);
+                const preferenceScore = totalShotTypeValue > 0 ? (match / totalShotTypeValue) * 100 : 50;
+
+                return Math.round(preferenceScore);
+            }
+
+            // V9.0: Calculate spot score combining distance and preference match
+            function calculateSpotScore(spot, searchCenter, preferences) {
+                if (!searchCenter) {
+                    // Fallback to risk score if no search center
+                    return spot.riskScore || 50;
+                }
+
+                // Distance component (0-100, closer = higher)
+                const distance = parseFloat(spot.distance) || 0;
+                const maxDistance = 25; // miles
+                const distanceScore = Math.max(0, 100 - (distance / maxDistance * 100));
+
+                // Preference match component (0-100)
+                const preferenceScore = calculatePreferenceMatch(spot.shotTypes, preferences);
+
+                // Combine: 40% distance + 60% preference
+                const finalScore = (distanceScore * 0.4) + (preferenceScore * 0.6);
+
+                return Math.round(finalScore);
+            }
+
+            // V9.0: Get match badge color based on percentage
+            function getMatchColor(percentage) {
+                if (percentage >= 90) return '#22c55e'; // Green
+                if (percentage >= 70) return '#eab308'; // Yellow
+                if (percentage >= 50) return '#f97316'; // Orange
+                return '#94a3b8'; // Gray
+            }
+
+            // V9.0: Get match label based on percentage
+            function getMatchLabel(percentage) {
+                if (percentage >= 90) return 'Perfect Match';
+                if (percentage >= 70) return 'Good Match';
+                if (percentage >= 50) return 'Moderate Match';
+                return 'Low Match';
+            }
+
+            // V9.0: Count spots by dominant shot type
+            function countSpotsByType(type) {
+                return state.spots.filter(spot => {
+                    if (!spot.shotTypes) return false;
+                    const dominant = Object.keys(spot.shotTypes).reduce((a, b) =>
+                        spot.shotTypes[a] > spot.shotTypes[b] ? a : b
+                    );
+                    return dominant === type;
+                }).length;
             }
 
             // Cloud sync functions
@@ -2585,14 +2662,29 @@
             }
 
             function renderTripPlanner() {
-                const spotsWithAdjustedScores = state.spots.map(spot => ({
-                    ...spot,
-                    adjustedScore: getAdjustedRiskScore(spot)
-                })).sort((a, b) => b.adjustedScore - a.adjustedScore);
+                // V9.0: Calculate preference-based scores and match percentages
+                const spotsWithScores = state.spots.map(spot => {
+                    // Calculate preference-based score
+                    const preferenceScore = calculateSpotScore(spot, state.searchCenter, state.preferences);
+
+                    // Apply learning adjustment if user has ratings
+                    const learningAdjustment = state.ratings.length > 0 ?
+                        (getAdjustedRiskScore(spot) - spot.riskScore) : 0;
+
+                    // Calculate match percentage for display
+                    const matchPercentage = calculatePreferenceMatch(spot.shotTypes, state.preferences);
+
+                    return {
+                        ...spot,
+                        score: preferenceScore + learningAdjustment,
+                        matchPercentage: matchPercentage,
+                        learningActive: state.ratings.length > 0
+                    };
+                }).sort((a, b) => b.score - a.score);
 
                 const displaySpots = state.showFavoritesOnly
-                    ? spotsWithAdjustedScores.filter(s => state.favorites.includes(s.id))
-                    : spotsWithAdjustedScores;
+                    ? spotsWithScores.filter(s => state.favorites.includes(s.id))
+                    : spotsWithScores;
 
                 return `
                     <div class="x10-badge">
@@ -2654,6 +2746,11 @@
                                     <span class="slider-label ${state.preferences.cityscape >= 50 ? 'active' : ''}">Cityscape</span>
                                 </div>
                                 <input type="range" min="0" max="100" value="${state.preferences.cityscape}" class="slider" id="cityscapeSlider">
+                                ${state.spots.length > 0 ? `
+                                    <div style="font-size: 11px; color: #666; margin-top: 4px; text-align: center;">
+                                        📊 ${countSpotsByType('landscape')} landscape · ${countSpotsByType('cityscape')} cityscape
+                                    </div>
+                                ` : ''}
                             </div>
                             <div class="slider-group">
                                 <div class="slider-labels">
@@ -2661,6 +2758,11 @@
                                     <span class="slider-label ${state.preferences.nature >= 50 ? 'active' : ''}">Nature</span>
                                 </div>
                                 <input type="range" min="0" max="100" value="${state.preferences.nature}" class="slider" id="natureSlider">
+                                ${state.spots.length > 0 ? `
+                                    <div style="font-size: 11px; color: #666; margin-top: 4px; text-align: center;">
+                                        📊 ${countSpotsByType('architecture')} architecture · ${countSpotsByType('nature')} nature
+                                    </div>
+                                ` : ''}
                             </div>
                             <div class="slider-group">
                                 <div class="slider-labels">
@@ -2714,10 +2816,15 @@
                                 <p style="color: #666;">No favorite spots yet. Star some locations to save them!</p>
                             </div>
                         ` : displaySpots.map(spot => {
-                            const riskScore = spot.adjustedScore;
+                            const riskScore = spot.adjustedScore || spot.riskScore;
                             const riskClass = riskScore >= 75 ? 'high' : riskScore >= 50 ? 'medium' : 'low';
                             const riskLabel = riskScore >= 75 ? 'Clear' : riskScore >= 50 ? 'Caution' : 'Review';
                             const riskIcon = riskScore >= 75 ? '✓' : '⚠';
+
+                            // V9.0: Match percentage and color
+                            const matchPercentage = spot.matchPercentage || 50;
+                            const matchColor = getMatchColor(matchPercentage);
+                            const matchLabel = getMatchLabel(matchPercentage);
 
                             return `
                                 <div class="spot-card" data-spot-id="${spot.id}">
@@ -2732,7 +2839,19 @@
                                     <div class="spot-info">
                                         <div class="spot-name">${spot.name}</div>
                                         <div class="spot-desc">${spot.description}</div>
-                                        <div class="spot-distance">📍 ${spot.distance} away</div>
+                                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+                                            <span class="spot-distance">📍 ${spot.distance} away</span>
+                                            <span style="color: #ddd;">·</span>
+                                            <span style="background: ${matchColor};
+                                                         color: white;
+                                                         padding: 3px 10px;
+                                                         border-radius: 12px;
+                                                         font-size: 11px;
+                                                         font-weight: 600;
+                                                         white-space: nowrap;">
+                                                ⭐ ${matchPercentage}% match
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             `;
@@ -3299,6 +3418,12 @@
                                     // V6: Save destination coordinates for map centering
                                     state.destinationCoords = location;
 
+                                    // V9.0: Save search center for preference ranking
+                                    state.searchCenter = {
+                                        lat: location.lat,
+                                        lon: location.lng
+                                    };
+
                                     // Step 2: Search for POIs near the location
                                     const pois = await searchPOIsNearLocation(location.lat, location.lng, 10, location.displayName);
 
@@ -3315,12 +3440,14 @@
                                     // Fallback: Geocoding failed, use hardcoded spots
                                     console.log('Geocoding failed, using fallback spots');
                                     state.destinationCoords = null;
+                                    state.searchCenter = null;
                                     state.spots = scenicSpots;
                                 }
                             } catch (error) {
                                 // Fallback: Error occurred, use hardcoded spots
                                 console.error('Location search error:', error);
                                 state.destinationCoords = null;
+                                state.searchCenter = null;
                                 state.spots = scenicSpots;
                             } finally {
                                 // Restore button state
