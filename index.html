@@ -453,6 +453,31 @@
             line-height: 1.3;
         }
 
+        /* Photo source badge */
+        .photo-source-badge {
+            position: absolute;
+            top: 12px;
+            right: 50px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 600;
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .photo-source-badge.streetview {
+            background: rgba(66, 133, 244, 0.9);
+            color: white;
+        }
+
+        .photo-source-badge.stock {
+            background: rgba(128, 128, 128, 0.8);
+            color: white;
+        }
+
         .favorite-star {
             position: absolute;
             top: 12px;
@@ -1834,18 +1859,32 @@
                 return getGenericDroneAdvice(tags, spotType);
             }
 
-            // Get generic drone photography advice based on spot type
+            // Get contextual drone photography advice based on spot type
             function getGenericDroneAdvice(tags, spotType) {
+                // More descriptive, less generic advice
                 if (tags.tourism === 'viewpoint' || tags.natural === 'peak') {
-                    return 'Ideal for panoramic aerial shots and wide-angle landscape footage.';
-                } else if (tags.natural === 'water' || tags.natural === 'beach') {
-                    return 'Perfect for capturing reflections and coastal perspectives.';
+                    if (tags.man_made === 'tower' || tags.building) {
+                        return 'Elevated observation point with panoramic views. Ideal for 360° aerial shots and wide-angle landscape footage.';
+                    }
+                    return 'Scenic overlook offering expansive views. Perfect for panoramic aerial shots and sunrise/sunset captures.';
+                } else if (tags.natural === 'water') {
+                    const waterType = tags.water;
+                    if (waterType === 'lake' || waterType === 'reservoir') {
+                        return 'Water feature with potential for reflection shots. Best for calm morning captures with mirror-like surface effects.';
+                    } else if (waterType === 'river') {
+                        return 'Flowing water feature. Great for dynamic footage following waterways and capturing movement.';
+                    }
+                    return 'Natural water area. Excellent for capturing reflections, waterscapes, and aerial perspectives of aquatic environments.';
+                } else if (tags.natural === 'beach') {
+                    return 'Coastal area with beach access. Perfect for shoreline tracking shots, wave patterns, and coastal landscapes.';
                 } else if (tags.leisure === 'park') {
-                    return 'Good for cinematic tracking shots and varied terrain.';
+                    return 'Public park with open green space. Good for varied terrain shots, tree canopy patterns, and recreational area footage.';
                 } else if (tags.leisure === 'nature_reserve' || tags.landuse === 'forest') {
-                    return 'Excellent for wildlife and forest canopy footage.';
+                    return 'Protected natural area. Excellent for wildlife habitat views, forest canopy footage, and ecological landscapes.';
+                } else if (tags.tourism === 'attraction') {
+                    return 'Notable point of interest. Suitable for architectural details, crowd dynamics, and tourist area perspectives.';
                 } else {
-                    return 'Suitable location for aerial photography.';
+                    return 'Drone-friendly location with aerial photography opportunities. Check local regulations before flying.';
                 }
             }
 
@@ -3345,12 +3384,18 @@
                             const matchColor = getMatchColor(matchPercentage);
                             const matchLabel = getMatchLabel(matchPercentage);
 
+                            // Photo source badge
+                            const photoSourceBadge = spot.imageSource === 'streetview'
+                                ? '<div class="photo-source-badge streetview">📸 Street View</div>'
+                                : '<div class="photo-source-badge stock">🖼️ Illustrative</div>';
+
                             return `
                                 <div class="spot-card" data-spot-id="${spot.id}">
                                     <img src="${spot.imageUrl}" alt="${spot.name}" class="spot-image">
                                     <div class="risk-badge ${riskClass}">
                                         ${riskIcon} ${riskScore} ${riskLabel}
                                     </div>
+                                    ${photoSourceBadge}
                                     <button class="favorite-star ${state.favorites.includes(spot.id) ? 'active' : ''}"
                                             data-spot-id="${spot.id}" id="favBtn${spot.id}">
                                         ${state.favorites.includes(spot.id) ? '★' : '☆'}
