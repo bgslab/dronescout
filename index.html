@@ -1801,7 +1801,7 @@
                     `;
                 }
 
-                // 3. DISTANCE TRAVELED (calculated from GPS track)
+                // 3. DISTANCE METRICS (calculated from GPS track)
                 if (stats._distance_traveled) {
                     const distMiles = stats._distance_traveled.miles.toFixed(2);
                     const distKm = stats._distance_traveled.kilometers.toFixed(2);
@@ -1811,6 +1811,19 @@
                             <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Distance Traveled</div>
                             <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${distMiles} mi</div>
                             <div style="color: #999; font-size: 11px;">${distKm} km</div>
+                        </div>
+                    `;
+                }
+
+                if (stats._max_distance_from_launch) {
+                    const maxDistMiles = stats._max_distance_from_launch.miles.toFixed(2);
+                    const maxDistFeet = stats._max_distance_from_launch.feet.toFixed(0);
+
+                    html += `
+                        <div>
+                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Max Range from Launch</div>
+                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${maxDistMiles} mi</div>
+                            <div style="color: #999; font-size: 11px;">${maxDistFeet} ft</div>
                         </div>
                     `;
                 }

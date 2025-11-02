@@ -329,8 +329,8 @@ async function handleFlightDetails(flightId, apiToken) {
         }
       });
 
-      // Calculate total distance traveled from GPS track
-      // Use Haversine formula to calculate distance between consecutive GPS points
+      // Calculate distance metrics from GPS track
+      // Use Haversine formula to calculate distance between GPS points
       function haversineDistance(lat1, lon1, lat2, lon2) {
         const R = 6371000; // Earth's radius in meters
         const toRad = (deg) => (deg * Math.PI) / 180;
@@ -346,21 +346,59 @@ async function handleFlightDetails(flightId, apiToken) {
         return R * c; // Distance in meters
       }
 
+      // Get launch point (first GPS coordinate)
+      const launchPoint = telemetryTrack[0];
+
       let totalDistance = 0;
+      let maxDistanceFromLaunch = 0;
+      let longestSegment = 0;
+
       for (let i = 1; i < telemetryTrack.length; i++) {
         const prev = telemetryTrack[i - 1];
         const curr = telemetryTrack[i];
 
         if (prev.lat && prev.lon && curr.lat && curr.lon) {
-          totalDistance += haversineDistance(prev.lat, prev.lon, curr.lat, curr.lon);
+          // Total distance traveled
+          const segmentDist = haversineDistance(prev.lat, prev.lon, curr.lat, curr.lon);
+          totalDistance += segmentDist;
+
+          // Longest single segment
+          if (segmentDist > longestSegment) {
+            longestSegment = segmentDist;
+          }
+
+          // Max distance from launch point
+          if (launchPoint.lat && launchPoint.lon) {
+            const distFromLaunch = haversineDistance(
+              launchPoint.lat, launchPoint.lon,
+              curr.lat, curr.lon
+            );
+            if (distFromLaunch > maxDistanceFromLaunch) {
+              maxDistanceFromLaunch = distFromLaunch;
+            }
+          }
         }
       }
 
-      // Add distance as a custom stat (in meters, frontend will convert to miles)
+      // Add distance metrics as custom stats
       telemetryStats._distance_traveled = {
         total: totalDistance,
-        miles: totalDistance * 0.000621371, // Convert meters to miles
+        miles: totalDistance * 0.000621371,
         kilometers: totalDistance / 1000,
+      };
+
+      telemetryStats._max_distance_from_launch = {
+        total: maxDistanceFromLaunch,
+        miles: maxDistanceFromLaunch * 0.000621371,
+        kilometers: maxDistanceFromLaunch / 1000,
+        feet: maxDistanceFromLaunch * 3.28084,
+      };
+
+      telemetryStats._longest_segment = {
+        total: longestSegment,
+        miles: longestSegment * 0.000621371,
+        kilometers: longestSegment / 1000,
+        feet: longestSegment * 3.28084,
       };
     }
   }
