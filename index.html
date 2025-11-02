@@ -1757,10 +1757,14 @@
 
             // Render telemetry stats - ONLY Speed, Altitude, Distance
             function renderAllTelemetryStats(stats) {
+                console.log('🎯 Rendering telemetry stats:', stats);
+                console.log('velocity field exists?', !!stats.velocity);
+                console.log('velocity data:', stats.velocity);
+
                 let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 13px;">';
 
                 // 1. SPEED (from velocity field)
-                if (stats.velocity) {
+                if (stats.velocity && stats.velocity.max != null) {
                     const maxSpeedMph = (stats.velocity.max * 2.23694).toFixed(1);
                     const maxSpeedMs = stats.velocity.max.toFixed(1);
                     const avgSpeedMph = (stats.velocity.avg * 2.23694).toFixed(1);
@@ -1778,6 +1782,8 @@
                             <div style="color: #999; font-size: 11px;">${avgSpeedMs} m/s</div>
                         </div>
                     `;
+                } else {
+                    console.warn('⚠️ Velocity field missing or invalid:', stats.velocity);
                 }
 
                 // 2. ALTITUDE (from height_above_takeoff field)
