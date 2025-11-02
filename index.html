@@ -1576,6 +1576,18 @@
                         return;
                     }
 
+                    // CRITICAL: Save telemetry to flight object in state so it persists
+                    const flightIndex = state.flights.findIndex(f => f.id === flightId);
+                    if (flightIndex >= 0) {
+                        state.flights[flightIndex] = {
+                            ...state.flights[flightIndex],
+                            telemetry: details.telemetry,
+                            details: details.flight
+                        };
+                        saveToStorage('flights', state.flights);
+                        console.log('Telemetry saved for flight:', flightId, details.telemetry.stats);
+                    }
+
                     // Switch to planner tab and render
                     state.currentTab = 'planner';
                     render();
