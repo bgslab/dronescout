@@ -5,6 +5,7 @@
 
 const SKYDIO_API_BASE = 'https://api.skydio.com';
 const GOOGLE_STREETVIEW_BASE = 'https://maps.googleapis.com/maps/api/streetview';
+const GOOGLE_PLACES_BASE = 'https://maps.googleapis.com/maps/api/place';
 const OPENWEATHER_API_BASE = 'https://api.openweathermap.org/data/2.5';
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -84,6 +85,28 @@ export default {
           return jsonResponse({ error: 'Missing lat or lon parameter' }, 400);
         }
         return await handleCurrentWeather(lat, lon, units, env.OPENWEATHER_API_KEY);
+      }
+
+      // Route requests - Google Places API
+      if (path === '/api/places/nearbysearch' && request.method === 'GET') {
+        const lat = url.searchParams.get('lat');
+        const lon = url.searchParams.get('lon');
+        const name = url.searchParams.get('name');
+        const radius = url.searchParams.get('radius') || '100'; // meters
+
+        if (!lat || !lon) {
+          return jsonResponse({ error: 'Missing lat or lon parameter' }, 400);
+        }
+        return await handlePlacesNearbySearch(lat, lon, name, radius, env.GOOGLE_MAPS_API_KEY);
+      }
+
+      if (path === '/api/places/details' && request.method === 'GET') {
+        const placeId = url.searchParams.get('place_id');
+
+        if (!placeId) {
+          return jsonResponse({ error: 'Missing place_id parameter' }, 400);
+        }
+        return await handlePlaceDetails(placeId, env.GOOGLE_MAPS_API_KEY);
       }
 
       return jsonResponse({ error: 'Not found' }, 404);
@@ -804,6 +827,143 @@ function assessFlyingConditions(data, units) {
         ? 'Do not fly'
         : 'Fly with caution'
   };
+}
+
+/**
+ * GET /api/places/nearbysearch
+ * Search for a place near a location by name
+ */
+async function handlePlacesNearbySearch(lat, lon, name, radius, apiKey) {
+  if (!apiKey) {
+    return jsonResponse({
+      success: false,
+      error: 'Google Maps API key not configured',
+      place: null
+    }, 500);
+  }
+
+  try {
+    // Use Nearby Search to find places near the coordinates
+    const location = `${lat},${lon}`;
+    let searchUrl = `${GOOGLE_PLACES_BASE}/nearbysearch/json?location=${location}&radius=${radius}&key=${apiKey}`;
+
+    // If name is provided, add keyword search
+    if (name) {
+      searchUrl += `&keyword=${encodeURIComponent(name)}`;
+    }
+
+    console.log('Places API Nearby Search:', searchUrl.replace(apiKey, 'API_KEY'));
+
+    const response = await fetch(searchUrl);
+    const data = await response.json();
+
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      // Return the first result (most relevant)
+      const place = data.results[0];
+      return jsonResponse({
+        success: true,
+        place: {
+          place_id: place.place_id,
+          name: place.name,
+          types: place.types,
+          vicinity: place.vicinity,
+          rating: place.rating,
+          user_ratings_total: place.user_ratings_total,
+          photos: place.photos ? place.photos.map(photo => ({
+            photo_reference: photo.photo_reference,
+            height: photo.height,
+            width: photo.width
+          })) : []
+        }
+      });
+    } else {
+      return jsonResponse({
+        success: false,
+        error: `No places found: ${data.status}`,
+        place: null
+      });
+    }
+  } catch (error) {
+    console.error('Places Nearby Search error:', error);
+    return jsonResponse({
+      success: false,
+      error: 'Failed to search places',
+      place: null,
+      details: error.message
+    }, 500);
+  }
+}
+
+/**
+ * GET /api/places/details
+ * Get detailed information about a place
+ */
+async function handlePlaceDetails(placeId, apiKey) {
+  if (!apiKey) {
+    return jsonResponse({
+      success: false,
+      error: 'Google Maps API key not configured',
+      details: null
+    }, 500);
+  }
+
+  try {
+    const detailsUrl = `${GOOGLE_PLACES_BASE}/details/json?place_id=${placeId}&fields=name,formatted_address,type,rating,user_ratings_total,photos,editorial_summary,reviews&key=${apiKey}`;
+
+    console.log('Places API Details:', detailsUrl.replace(apiKey, 'API_KEY'));
+
+    const response = await fetch(detailsUrl);
+    const data = await response.json();
+
+    if (data.status === 'OK' && data.result) {
+      const place = data.result;
+      return jsonResponse({
+        success: true,
+        details: {
+          name: place.name,
+          address: place.formatted_address,
+          types: place.types,
+          rating: place.rating,
+          user_ratings_total: place.user_ratings_total,
+          editorial_summary: place.editorial_summary?.overview || null,
+          photos: place.photos ? place.photos.map(photo => ({
+            photo_reference: photo.photo_reference,
+            height: photo.height,
+            width: photo.width,
+            attributions: photo.html_attributions
+          })) : [],
+          reviews: place.reviews ? place.reviews.slice(0, 3).map(review => ({
+            author: review.author_name,
+            rating: review.rating,
+            text: review.text,
+            time: review.time
+          })) : []
+        }
+      });
+    } else {
+      return jsonResponse({
+        success: false,
+        error: `Place details not found: ${data.status}`,
+        details: null
+      });
+    }
+  } catch (error) {
+    console.error('Places Details error:', error);
+    return jsonResponse({
+      success: false,
+      error: 'Failed to fetch place details',
+      details: null,
+      details_error: error.message
+    }, 500);
+  }
+}
+
+/**
+ * Helper: Get Google Places photo URL
+ * Constructs URL to fetch place photo
+ */
+function getPlacePhotoUrl(photoReference, maxWidth, apiKey) {
+  return `${GOOGLE_PLACES_BASE}/photo?maxwidth=${maxWidth}&photo_reference=${photoReference}&key=${apiKey}`;
 }
 
 /**
