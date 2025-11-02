@@ -3734,9 +3734,14 @@
                         ${state.plannerMode === 'auto' ? `
                             <div class="input-group">
                                 <label>📍 Destination</label>
-                                <input type="text" id="destinationInput" placeholder="Enter city, hotel, or landmark" value="${state.destination}">
+                                <input type="text" id="destinationInput" placeholder="Enter city, hotel, or landmark (press Enter)" value="${state.destination}">
                             </div>
-                            <button class="btn" id="findSpotsBtn">Find Spots</button>
+                            <div style="display: flex; gap: 10px;">
+                                <button class="btn" id="findSpotsBtn" style="flex: 1;">Find Spots</button>
+                                <button class="btn" id="findNearMeBtn" style="flex: 1; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                                    📍 Near Me
+                                </button>
+                            </div>
                         ` : `
                             <div class="input-group">
                                 <label>🏨 Start Location</label>
@@ -3863,6 +3868,63 @@
                                             </span>
                                         </div>
                                         ${renderWeatherCard(spot.weather)}
+                                        ${spot.intelligence ? `
+                                            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; font-size: 11px;">
+                                                ${spot.intelligence.access ? `
+                                                    <span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 12px; background: ${
+                                                        spot.intelligence.access.status === 'accessible' ? '#d1fae5' :
+                                                        spot.intelligence.access.status === 'permit_required' ? '#fef3c7' :
+                                                        spot.intelligence.access.status === 'restricted' ? '#fee2e2' : '#e5e7eb'
+                                                    }; color: ${
+                                                        spot.intelligence.access.status === 'accessible' ? '#065f46' :
+                                                        spot.intelligence.access.status === 'permit_required' ? '#92400e' :
+                                                        spot.intelligence.access.status === 'restricted' ? '#991b1b' : '#1f2937'
+                                                    }; font-weight: 600;">
+                                                        ${
+                                                            spot.intelligence.access.status === 'accessible' ? '✅' :
+                                                            spot.intelligence.access.status === 'permit_required' ? '⚠️' :
+                                                            spot.intelligence.access.status === 'restricted' ? '🚫' : '❓'
+                                                        }
+                                                        ${spot.intelligence.access.type === 'public' ? 'Public' :
+                                                          spot.intelligence.access.type === 'public_restricted' ? 'Permit Required' :
+                                                          spot.intelligence.access.type === 'private' ? 'Private' :
+                                                          spot.intelligence.access.type === 'limited' ? 'Limited' : 'Unknown'}
+                                                    </span>
+                                                ` : ''}
+                                                ${spot.intelligence.populationDensity ? `
+                                                    ${(() => {
+                                                        const hasWaiver = state.userProfile.waivers.some(w => w.type === 'over_people');
+                                                        const needsWaiver = spot.intelligence.populationDensity.requiresWaiver;
+                                                        const isOk = !needsWaiver || hasWaiver;
+                                                        return `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 12px; background: ${
+                                                            isOk ? '#d1fae5' : '#fef3c7'
+                                                        }; color: ${
+                                                            isOk ? '#065f46' : '#92400e'
+                                                        }; font-weight: 600;">
+                                                            ${isOk ? '✅' : '⚠️'} ${
+                                                                spot.intelligence.populationDensity.density === 'high' ? 'Urban' :
+                                                                spot.intelligence.populationDensity.density === 'medium' ? 'Suburban' : 'Rural'
+                                                            }${hasWaiver && needsWaiver ? ' (Waiver ✓)' : ''}
+                                                        </span>`;
+                                                    })()}
+                                                ` : ''}
+                                                ${spot.intelligence.obstacles ? `
+                                                    <span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 12px; background: ${
+                                                        spot.intelligence.obstacles.risk === 'low' ? '#d1fae5' :
+                                                        spot.intelligence.obstacles.risk === 'medium' ? '#fef3c7' : '#fee2e2'
+                                                    }; color: ${
+                                                        spot.intelligence.obstacles.risk === 'low' ? '#065f46' :
+                                                        spot.intelligence.obstacles.risk === 'medium' ? '#92400e' : '#991b1b'
+                                                    }; font-weight: 600;">
+                                                        ${
+                                                            spot.intelligence.obstacles.risk === 'low' ? '✅' :
+                                                            spot.intelligence.obstacles.risk === 'medium' ? '⚠️' : '🚫'
+                                                        }
+                                                        ${spot.intelligence.obstacles.count} Obstacles
+                                                    </span>
+                                                ` : ''}
+                                            </div>
+                                        ` : ''}
                                     </div>
                                 </div>
                             `;
@@ -3903,6 +3965,62 @@
                             <div style="background: #f0e8ff; border-left: 4px solid #6a11cb; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
                                 <h4 style="font-size: 14px; font-weight: 700; color: #6a11cb; margin-bottom: 8px;">✨ X10 Advantage</h4>
                                 <p style="font-size: 13px; color: #666;">${spot.x10Advantage}</p>
+                            </div>
+                        ` : ''}
+
+                        ${spot.intelligence && spot.scoreBreakdown ? `
+                            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 15px;">
+                                <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 15px 0;">🛩️ Flight Viability Score: ${Math.round(spot.scoreBreakdown.legal + spot.scoreBreakdown.accessibility + spot.scoreBreakdown.safety + spot.scoreBreakdown.photoQuality)}/100</h3>
+
+                                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 15px;">
+                                    <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; backdrop-filter: blur(10px);">
+                                        <div style="font-size: 11px; opacity: 0.9; margin-bottom: 4px;">Legal Viability</div>
+                                        <div style="font-size: 20px; font-weight: 700;">${Math.round(spot.scoreBreakdown.legal)}<span style="font-size: 12px; opacity: 0.8;">/25</span></div>
+                                    </div>
+                                    <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; backdrop-filter: blur(10px);">
+                                        <div style="font-size: 11px; opacity: 0.9; margin-bottom: 4px;">Accessibility</div>
+                                        <div style="font-size: 20px; font-weight: 700;">${Math.round(spot.scoreBreakdown.accessibility)}<span style="font-size: 12px; opacity: 0.8;">/25</span></div>
+                                    </div>
+                                    <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; backdrop-filter: blur(10px);">
+                                        <div style="font-size: 11px; opacity: 0.9; margin-bottom: 4px;">Safety</div>
+                                        <div style="font-size: 20px; font-weight: 700;">${Math.round(spot.scoreBreakdown.safety)}<span style="font-size: 12px; opacity: 0.8;">/20</span></div>
+                                    </div>
+                                    <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; backdrop-filter: blur(10px);">
+                                        <div style="font-size: 11px; opacity: 0.9; margin-bottom: 4px;">Photo Quality</div>
+                                        <div style="font-size: 20px; font-weight: 700;">${Math.round(spot.scoreBreakdown.photoQuality)}<span style="font-size: 12px; opacity: 0.8;">/30</span></div>
+                                    </div>
+                                </div>
+
+                                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; font-size: 13px; line-height: 1.6;">
+                                    ${spot.intelligence.access ? `
+                                        <div style="margin-bottom: 10px;">
+                                            <strong>${
+                                                spot.intelligence.access.status === 'accessible' ? '✅' :
+                                                spot.intelligence.access.status === 'permit_required' ? '⚠️' :
+                                                spot.intelligence.access.status === 'restricted' ? '🚫' : '❓'
+                                            } Access:</strong> ${spot.intelligence.access.reason}
+                                        </div>
+                                    ` : ''}
+                                    ${spot.intelligence.populationDensity ? `
+                                        <div style="margin-bottom: 10px;">
+                                            <strong>${(() => {
+                                                const hasWaiver = state.userProfile.waivers.some(w => w.type === 'over_people');
+                                                const needsWaiver = spot.intelligence.populationDensity.requiresWaiver;
+                                                return !needsWaiver || hasWaiver ? '✅' : '⚠️';
+                                            })()} Population:</strong> ${spot.intelligence.populationDensity.reason}
+                                        </div>
+                                    ` : ''}
+                                    ${spot.intelligence.obstacles ? `
+                                        <div>
+                                            <strong>${
+                                                spot.intelligence.obstacles.risk === 'low' ? '✅' :
+                                                spot.intelligence.obstacles.risk === 'medium' ? '⚠️' : '🚫'
+                                            } Obstacles:</strong> ${spot.intelligence.obstacles.count} detected within 500ft${
+                                                spot.intelligence.obstacles.types.length > 0 ? ` (${spot.intelligence.obstacles.types.join(', ')})` : ''
+                                            }
+                                        </div>
+                                    ` : ''}
+                                </div>
                             </div>
                         ` : ''}
 
@@ -4510,6 +4628,19 @@
                     });
                 });
 
+                // V10.0: Enter key support for destination input
+                const destinationInput = document.getElementById('destinationInput');
+                if (destinationInput) {
+                    destinationInput.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            const findSpotsBtn = document.getElementById('findSpotsBtn');
+                            if (findSpotsBtn) {
+                                findSpotsBtn.click();
+                            }
+                        }
+                    });
+                }
+
                 // Find spots button with real location search
                 const findSpotsBtn = document.getElementById('findSpotsBtn');
                 if (findSpotsBtn) {
@@ -4571,6 +4702,65 @@
                                 findSpotsBtn.textContent = 'Find Spots';
                                 render();
                             }
+                        }
+                    });
+                }
+
+                // V10.0: Find spots near me button
+                const findNearMeBtn = document.getElementById('findNearMeBtn');
+                if (findNearMeBtn) {
+                    findNearMeBtn.addEventListener('click', async () => {
+                        if (!state.userLocation) {
+                            alert('Please allow location access to find spots near you');
+                            getUserLocation();
+                            return;
+                        }
+
+                        // Show loading state
+                        state.loadingSpots = true;
+                        state.spots = [];
+                        state.destination = 'My Current Location';
+                        findNearMeBtn.disabled = true;
+                        findNearMeBtn.innerHTML = '<span class="spinner"></span> Finding...';
+                        render();
+
+                        try {
+                            // Use current location coordinates
+                            state.destinationCoords = {
+                                lat: state.userLocation.lat,
+                                lng: state.userLocation.lng
+                            };
+
+                            state.searchCenter = {
+                                lat: state.userLocation.lat,
+                                lon: state.userLocation.lng
+                            };
+
+                            // Search for POIs near current location
+                            const pois = await searchPOIsNearLocation(
+                                state.userLocation.lat,
+                                state.userLocation.lng,
+                                null, // Use user profile radius
+                                'Current Location'
+                            );
+
+                            if (pois && pois.length > 0) {
+                                state.spots = pois;
+                                console.log(`Found ${pois.length} spots near your location`);
+                            } else {
+                                console.log('No POIs found near you');
+                                alert('No drone spots found near your location. Try a different area.');
+                                state.spots = [];
+                            }
+                        } catch (error) {
+                            console.error('Near me search error:', error);
+                            alert('Error finding spots near you. Please try again.');
+                            state.spots = [];
+                        } finally {
+                            state.loadingSpots = false;
+                            findNearMeBtn.disabled = false;
+                            findNearMeBtn.innerHTML = '📍 Near Me';
+                            render();
                         }
                     });
                 }
