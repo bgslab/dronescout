@@ -1869,6 +1869,43 @@
 
                     console.log('✅ Inline map loaded successfully for flight:', flightId);
 
+                    // Update telemetry display if it exists
+                    const telemetryDetails = document.querySelector(`.telemetry-details[data-flight-id="${flightId}"]`);
+                    if (telemetryDetails && telemetry.stats) {
+                        const telemetryContent = telemetryDetails.querySelector('div[style*="padding: 12px"]');
+                        if (telemetryContent) {
+                            telemetryContent.innerHTML = renderAllTelemetryStats(telemetry.stats);
+                        }
+                    }
+
+                    // Reverse geocode location if not already done
+                    const flightIndex = state.flights.findIndex(f => f.id === flightId);
+                    if (flightIndex >= 0 && !state.flights[flightIndex].locationName && displayCoords.length > 0) {
+                        // Use first coordinate (launch point)
+                        const [lat, lon] = displayCoords[0];
+                        const locationName = await reverseGeocode(lat, lon);
+
+                        if (locationName) {
+                            state.flights[flightIndex].locationName = locationName;
+                            saveToStorage('flights', state.flights);
+
+                            // Update the flight card title
+                            const flightCard = document.getElementById(`flight-card-${flightId}`);
+                            if (flightCard) {
+                                const flightTitle = flightCard.querySelector('.flight-location');
+                                if (flightTitle) {
+                                    const newName = generateFlightName(state.flights[flightIndex]);
+                                    // Keep the badges, just update the text
+                                    const badges = flightTitle.querySelectorAll('.badge');
+                                    flightTitle.innerHTML = newName;
+                                    badges.forEach(badge => flightTitle.appendChild(badge));
+                                }
+                            }
+
+                            console.log('📍 Location resolved:', locationName);
+                        }
+                    }
+
                 } catch (error) {
                     console.error('Error loading inline map:', error);
                     const mapContainer = document.getElementById(`inline-map-${flightId}`);
@@ -1889,7 +1926,7 @@
                 });
             }
 
-            // Generate descriptive flight name with drone model, time of day, and duration
+            // Generate descriptive flight name with drone model, time of day, location, and duration
             function generateFlightName(flight) {
                 const date = new Date(flight.created_at || flight.date);
                 const hour = date.getHours();
@@ -1915,17 +1952,54 @@
                 const duration = flight.duration_seconds || flight.duration || 0;
                 const durationMin = Math.round(duration / 60);
 
-                // Location (if available from reverse geocoding - future enhancement)
-                // For now, use generic location or coordinates
-                const location = flight.location?.name || '';
+                // Location from cached reverse geocode or from flight object
+                const location = flight.locationName || '';
 
                 // Build descriptive name
                 if (droneModel && location) {
-                    return `${droneModel} - ${timeOfDay} at ${location} (${durationMin}m)`;
+                    return `${droneModel} - ${timeOfDay} in ${location} (${durationMin}m)`;
                 } else if (droneModel) {
                     return `${droneModel} - ${timeOfDay} Flight (${durationMin}m)`;
                 } else {
                     return `${timeOfDay} Flight (${durationMin}m)`;
+                }
+            }
+
+            // Reverse geocode GPS coordinates to get city, state
+            async function reverseGeocode(lat, lon) {
+                try {
+                    // Use Nominatim (OpenStreetMap's geocoding service)
+                    // Rate limit: max 1 request per second
+                    const response = await fetch(
+                        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
+                        {
+                            headers: {
+                                'User-Agent': 'DroneScout/1.0 (https://bgslab.github.io/dronescout)'
+                            }
+                        }
+                    );
+
+                    if (!response.ok) return null;
+
+                    const data = await response.json();
+                    const address = data.address;
+
+                    // Build location string: City, State or Town, State
+                    const city = address.city || address.town || address.village || address.county;
+                    const state = address.state;
+
+                    if (city && state) {
+                        return `${city}, ${state}`;
+                    } else if (city) {
+                        return city;
+                    } else if (state) {
+                        return state;
+                    }
+
+                    return null;
+                } catch (error) {
+                    console.error('Reverse geocoding error:', error);
+                    return null;
                 }
             }
 
