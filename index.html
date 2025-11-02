@@ -2036,8 +2036,44 @@
                         <div id="mapContainer" class="map-container" style="height: 400px; width: 100%;"></div>
                     </div>
 
-                    <!-- Debug button for map diagnostics -->
-                    <div style="margin-bottom: 20px; text-align: center;">
+                    <!-- Debug buttons for map diagnostics and testing -->
+                    <div style="margin-bottom: 20px; text-align: center; display: flex; gap: 10px; justify-content: center;">
+                        <button onclick="
+                            // TEST WITH KNOWN GOOD DATA - Chicago loop flight
+                            if (state.map) state.map.remove();
+
+                            // Create map
+                            state.map = L.map('mapContainer').setView([41.8781, -87.6298], 13);
+                            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                                attribution: '&copy; OpenStreetMap'
+                            }).addTo(state.map);
+
+                            // Create a test flight path around Chicago Loop
+                            const testPath = [
+                                [41.8781, -87.6298],  // Start: Chicago
+                                [41.8800, -87.6250],
+                                [41.8850, -87.6200],
+                                [41.8900, -87.6250],
+                                [41.8900, -87.6350],
+                                [41.8850, -87.6400],
+                                [41.8800, -87.6350],
+                                [41.8781, -87.6298]   // End: Back to start
+                            ];
+
+                            const flightPath = L.polyline(testPath, {
+                                color: '#2563eb',
+                                weight: 3,
+                                opacity: 0.8
+                            }).addTo(state.map);
+
+                            state.map.fitBounds(flightPath.getBounds(), { padding: [50, 50] });
+
+                            console.log('✅ TEST FLIGHT LOADED - Chicago Loop with known-good coordinates');
+                            alert('🧪 Test flight loaded!\\n\\nIf you see map tiles, the code works.\\nIf still gray, there\\'s a code issue.');
+                        " style="padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                            🧪 Test with Good Data
+                        </button>
+
                         <button onclick="
                             if (window.mapDiagnostics) {
                                 const text = JSON.stringify(window.mapDiagnostics, null, 2);
