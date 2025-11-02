@@ -1097,7 +1097,8 @@
                 upcomingFlights: loadFromStorage('upcomingFlights') || [],
                 flights: loadFromStorage('flights') || [],
                 ratings: loadFromStorage('ratings') || [],
-                preferences: loadFromStorage('preferences') || {
+                // V10.0: Preferences always default to 50-50 (don't persist between sessions)
+                preferences: {
                     cityscape: 50,
                     nature: 50,
                     architecture: 50
@@ -4711,6 +4712,13 @@
                         if (input && input.value) {
                             state.destination = input.value;
 
+                            // V10.0: Reset preferences to default 50-50 for new search
+                            state.preferences = {
+                                cityscape: 50,
+                                nature: 50,
+                                architecture: 50
+                            };
+
                             // Show loading state
                             state.loadingSpots = true;
                             state.spots = []; // Clear previous spots
@@ -4780,6 +4788,13 @@
                             getUserLocation();
                             return;
                         }
+
+                        // V10.0: Reset preferences to default 50-50 for new search
+                        state.preferences = {
+                            cityscape: 50,
+                            nature: 50,
+                            architecture: 50
+                        };
 
                         // Show loading state
                         state.loadingSpots = true;
@@ -4852,13 +4867,13 @@
                     });
                 }
 
-                // Preference sliders
+                // Preference sliders (V10.0: Don't persist - reset to 50-50 on page load)
                 ['cityscape', 'nature', 'architecture'].forEach(pref => {
                     const slider = document.getElementById(`${pref}Slider`);
                     if (slider) {
                         slider.addEventListener('input', (e) => {
                             state.preferences[pref] = parseInt(e.target.value);
-                            saveToStorage('preferences', state.preferences);
+                            // Don't save to storage - preferences reset on each page load
                             render();
                         });
                     }
