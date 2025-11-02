@@ -1632,8 +1632,21 @@
                         return;
                     }
 
+                    // CRITICAL: Reduce point density if too many points (performance optimization)
+                    // Too many points (1000+) can cause rendering issues and prevent tiles from loading
+                    let displayCoords = pathCoords;
+                    if (pathCoords.length > 200) {
+                        const skipFactor = Math.ceil(pathCoords.length / 200);
+                        displayCoords = pathCoords.filter((_, index) => index % skipFactor === 0);
+                        // Always include last point
+                        if (!displayCoords.includes(pathCoords[pathCoords.length - 1])) {
+                            displayCoords.push(pathCoords[pathCoords.length - 1]);
+                        }
+                        console.log(`Reduced ${pathCoords.length} points to ${displayCoords.length} for display (skip factor: ${skipFactor})`);
+                    }
+
                     // Create map - start with a default view, will adjust with fitBounds
-                    const centerPoint = pathCoords[Math.floor(pathCoords.length / 2)];
+                    const centerPoint = displayCoords[Math.floor(displayCoords.length / 2)];
                     state.map = L.map('mapContainer').setView(centerPoint, 15);
 
                     // Add OpenStreetMap tiles - SIMPLE approach
@@ -1641,10 +1654,10 @@
                         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                     }).addTo(state.map);
 
-                    console.log('Map created, drawing flight path with', pathCoords.length, 'points');
+                    console.log('Map created, drawing flight path with', displayCoords.length, 'points');
 
-                    // Draw flight path on map
-                    const flightPath = L.polyline(pathCoords, {
+                    // Draw flight path on map (using reduced point set)
+                    const flightPath = L.polyline(displayCoords, {
                         color: '#2563eb',
                         weight: 3,
                         opacity: 0.8,
