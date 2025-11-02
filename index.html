@@ -1982,8 +1982,8 @@
             }
 
             /**
-             * V10.1: Unified search function - Flickr Photo Hotspots (PRIMARY), then fallbacks
-             * Photos define locations, not places defining photos!
+             * V10.1: Unified search function - Foursquare Places Discovery (PRIMARY), then fallbacks
+             * Comprehensive location discovery across urban, suburban, rural - everything in between!
              */
             async function searchForDroneSpots(lat, lng, radiusKm = null, locationName = '') {
                 try {
@@ -1994,17 +1994,17 @@
 
                     console.log(`🚁 Searching for drone spots: ${radiusKm.toFixed(1)}km (${(radiusKm * 0.621371).toFixed(1)} mi) radius`);
 
-                    // PRIMARY METHOD: Flickr Photo Hotspots
-                    // Find where photographers actually shoot, not just "places"
-                    const flickrResult = await searchFlickrHotspots(lat, lng, radiusKm, locationName);
+                    // PRIMARY METHOD: Foursquare Places Discovery
+                    // Find ALL types of photo-worthy locations: urban, suburban, rural, nature
+                    const foursquareResult = await searchFoursquarePlaces(lat, lng, radiusKm, locationName);
 
-                    if (flickrResult.success && flickrResult.spots.length > 0) {
-                        console.log(`✅ Using ${flickrResult.count} photo hotspots from Flickr`);
-                        return flickrResult.spots;
+                    if (foursquareResult.success && foursquareResult.spots.length > 0) {
+                        console.log(`✅ Using ${foursquareResult.count} places from Foursquare`);
+                        return foursquareResult.spots;
                     }
 
-                    // Fallback to OpenStreetMap if Flickr fails
-                    console.log('⚠️ Flickr photo hotspots unavailable. Trying OpenStreetMap...');
+                    // Fallback to OpenStreetMap if Foursquare fails
+                    console.log('⚠️ Foursquare places unavailable. Trying OpenStreetMap...');
                     const osmSpots = await searchPOIsNearLocation(lat, lng, radiusKm, locationName);
 
                     if (osmSpots && osmSpots.length > 0) {
@@ -2022,12 +2022,12 @@
             }
 
             /**
-             * V10.1: Search Flickr for photo hotspots via Cloudflare Worker
-             * This is THE RIGHT APPROACH per Claude chat recommendation
+             * V10.1: Search Foursquare for places via Cloudflare Worker
+             * Per Claude chat recommendation - comprehensive location discovery
              */
-            async function searchFlickrHotspots(lat, lng, radiusKm, locationName = '') {
+            async function searchFoursquarePlaces(lat, lng, radiusKm, locationName = '') {
                 try {
-                    console.log(`📸 Flickr photo hotspot search: ${radiusKm}km radius from [${lat.toFixed(4)}, ${lng.toFixed(4)}]`);
+                    console.log(`📍 Foursquare place search: ${radiusKm}km radius from [${lat.toFixed(4)}, ${lng.toFixed(4)}]`);
 
                     const workerUrl = state.syncSettings?.workerUrl;
                     if (!workerUrl) {
@@ -2035,7 +2035,9 @@
                         return { success: false, error: 'Worker URL not configured' };
                     }
 
-                    const url = `${workerUrl}/api/flickr/photospots?lat=${lat}&lon=${lng}&radius=${radiusKm}`;
+                    // Convert km to meters for Foursquare API
+                    const radiusMeters = radiusKm * 1000;
+                    const url = `${workerUrl}/api/foursquare/discover?lat=${lat}&lon=${lng}&radius=${radiusMeters}`;
 
                     console.log(`📡 Fetching from worker: ${url}`);
 
@@ -2049,14 +2051,14 @@
                     const data = await response.json();
 
                     if (!data.success || !data.results || data.results.length === 0) {
-                        console.warn('No Flickr photo hotspots found');
-                        return { success: false, error: data.error || 'No hotspots found' };
+                        console.warn('No Foursquare places found');
+                        return { success: false, error: data.error || 'No places found' };
                     }
 
-                    console.log(`✅ Found ${data.count} photo hotspots from ${data.totalPhotosAnalyzed} photos`);
+                    console.log(`✅ Found ${data.count} places from Foursquare (${data.totalPlacesAnalyzed} analyzed)`);
 
-                    // Process Flickr hotspots into DroneScout format
-                    const processedSpots = await processFlickrHotspots(data.results, lat, lng, locationName);
+                    // Process Foursquare places into DroneScout format
+                    const processedSpots = await processFoursquarePlaces(data.results, lat, lng, locationName);
 
                     return {
                         success: true,
@@ -2065,54 +2067,63 @@
                     };
 
                 } catch (error) {
-                    console.error('❌ Flickr hotspot search error:', error);
+                    console.error('❌ Foursquare place search error:', error);
                     return { success: false, error: error.message };
                 }
             }
 
             /**
-             * Process Flickr hotspots into DroneScout spot format
+             * Process Foursquare places into DroneScout spot format
              */
-            async function processFlickrHotspots(hotspots, centerLat, centerLng, locationName = '') {
+            async function processFoursquarePlaces(places, centerLat, centerLng, locationName = '') {
                 const spots = [];
 
-                for (let index = 0; index < Math.min(hotspots.length, 15); index++) {
-                    const hotspot = hotspots[index];
+                for (let index = 0; index < Math.min(places.length, 15); index++) {
+                    const place = places[index];
 
                     try {
                         // Calculate distance
-                        const distance = calculateDistance(centerLat, centerLng, hotspot.lat, hotspot.lng);
+                        const distance = calculateDistance(centerLat, centerLng, place.lat, place.lng);
 
                         // Fetch weather and obstacles in parallel
                         const [weatherData, obstacleData] = await Promise.all([
-                            fetchCurrentWeather(hotspot.lat, hotspot.lng, 'imperial'),
-                            detectObstacles(hotspot.lat, hotspot.lng, 500).catch(() => ({ count: 0, types: [], risk: 'low' }))
+                            fetchCurrentWeather(place.lat, place.lng, 'imperial'),
+                            detectObstacles(place.lat, place.lng, 500).catch(() => ({ count: 0, types: [], risk: 'low' }))
                         ]);
 
-                        // Determine spot type from Flickr tags
+                        // Determine spot type from Foursquare categories
                         const spotType = {
-                            category: hotspot.shotType || 'landscape',
-                            name: 'Photo Hotspot',
-                            bestTime: hotspot.bestTimeToShoot || 'Golden hour',
-                            shotTypes: determineShotTypesFromTags(hotspot.tags)
+                            category: place.primaryCategory || 'landmark',
+                            name: place.primaryCategory || 'Drone Spot',
+                            bestTime: 'Golden hour',
+                            shotTypes: determineShotTypesFromCategories(place.categories)
                         };
 
+                        // Build description from Foursquare data
+                        let description = place.description;
+                        if (place.tips && place.tips.length > 0) {
+                            description += ` • "${place.tips[0].text}"`;
+                        }
+
                         spots.push({
-                            id: hotspot.id,
-                            name: hotspot.name,
-                            description: hotspot.description + ` • Tags: ${hotspot.tags.slice(0, 3).join(', ')}`,
-                            coordinates: { lat: hotspot.lat, lng: hotspot.lng },
-                            imageUrl: hotspot.photos[0]?.url || hotspot.photos[0]?.url_large,
-                            imageSource: 'flickr',
+                            id: place.fsq_id,
+                            name: place.name,
+                            description: description,
+                            coordinates: { lat: place.lat, lng: place.lng },
+                            imageUrl: place.photoUrl,
+                            imageSource: 'foursquare',
                             imageMetadata: {
-                                flickrPhotos: hotspot.photos,
-                                photoCount: hotspot.photoCount,
-                                totalViews: hotspot.totalViews,
-                                avgViews: hotspot.avgViews
+                                foursquareId: place.fsq_id,
+                                categories: place.categories,
+                                popularity: place.popularity,
+                                rating: place.rating,
+                                droneScore: place.droneScore
                             },
-                            flightInstructions: `Popular photo spot - ${hotspot.photoCount} photos by ${hotspot.photos.length} photographers`,
+                            flightInstructions: place.tips && place.tips.length > 0 ?
+                                `Photo-worthy location - ${place.tips.length} community tip(s)` :
+                                `Drone score: ${place.droneScore}/100`,
                             bestTime: spotType.bestTime,
-                            x10Advantage: "X10's advanced autonomy enables safe navigation to replicate these popular shots.",
+                            x10Advantage: "X10's advanced autonomy enables safe navigation to capture stunning aerial perspectives.",
                             distance: `${distance.toFixed(1)} mi`,
                             riskScore: calculateRiskScore({}, spotType),
                             shotTypes: spotType.shotTypes,
@@ -2144,40 +2155,48 @@
                                 access: { status: 'check_locally', score: 10 },
                                 populationDensity: { density: 'unknown' },
                                 cellCoverage: 'good',
-                                flickrPopularity: hotspot.totalViews
+                                foursquareScore: place.droneScore
                             }
                         });
 
                     } catch (error) {
-                        console.error(`Error processing hotspot ${hotspot.name}:`, error);
+                        console.error(`Error processing place ${place.name}:`, error);
                     }
                 }
 
-                // Sort by distance
+                // Sort by drone score (already sorted from worker, but ensure)
                 return spots.sort((a, b) => {
-                    const distA = parseFloat(a.distance);
-                    const distB = parseFloat(b.distance);
-                    return distA - distB;
+                    return (b.imageMetadata.droneScore || 0) - (a.imageMetadata.droneScore || 0);
                 });
             }
 
             /**
-             * Determine shot types from Flickr tags
+             * Determine shot types from Foursquare categories
              */
-            function determineShotTypesFromTags(tags) {
-                const cityTags = ['city', 'urban', 'downtown', 'skyline', 'cityscape', 'architecture'];
-                const natureTags = ['nature', 'landscape', 'forest', 'mountain', 'tree', 'wildlife'];
-                const waterTags = ['water', 'lake', 'river', 'ocean', 'beach', 'harbor'];
+            function determineShotTypesFromCategories(categories) {
+                if (!categories || categories.length === 0) {
+                    return { cityscape: 50, nature: 50, landscape: 50, architecture: 50 };
+                }
 
-                const cityCount = tags.filter(t => cityTags.includes(t.toLowerCase())).length;
-                const natureCount = tags.filter(t => natureTags.includes(t.toLowerCase())).length;
-                const waterCount = tags.filter(t => waterTags.includes(t.toLowerCase())).length;
+                const categoryNames = categories.map(c => c.toLowerCase());
+
+                // Urban/City indicators
+                const cityKeywords = ['city', 'urban', 'downtown', 'skyline', 'landmark', 'monument', 'building', 'stadium', 'university', 'bridge', 'harbor'];
+                const cityScore = categoryNames.filter(c => cityKeywords.some(k => c.includes(k))).length;
+
+                // Nature indicators
+                const natureKeywords = ['nature', 'park', 'beach', 'garden', 'scenic', 'viewpoint', 'outdoors', 'natural'];
+                const natureScore = categoryNames.filter(c => natureKeywords.some(k => c.includes(k))).length;
+
+                // Architecture indicators
+                const archKeywords = ['architecture', 'historic', 'building', 'monument', 'church', 'cathedral', 'temple'];
+                const archScore = categoryNames.filter(c => archKeywords.some(k => c.includes(k))).length;
 
                 return {
-                    cityscape: Math.min(100, cityCount * 20),
-                    nature: Math.min(100, natureCount * 20),
-                    landscape: Math.min(100, (natureCount + waterCount) * 15),
-                    architecture: Math.min(100, cityCount * 15)
+                    cityscape: Math.min(100, cityScore * 30 + 30),
+                    nature: Math.min(100, natureScore * 30 + 30),
+                    landscape: Math.min(100, natureScore * 25 + 25),
+                    architecture: Math.min(100, archScore * 25 + 25)
                 };
             }
 
