@@ -1580,8 +1580,11 @@
                     state.currentTab = 'planner';
                     render();
 
-                    // CRITICAL: Wait longer for tab transition and DOM layout to complete
-                    await new Promise(resolve => setTimeout(resolve, 300));
+                    // CRITICAL: Wait for tab transition and DOM to be fully ready
+                    // Use requestAnimationFrame to ensure DOM is painted before creating map
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                    await new Promise(resolve => requestAnimationFrame(resolve));
 
                     // Clean up old map if exists
                     if (state.map) {
@@ -1589,10 +1592,7 @@
                         state.map = null;
                     }
 
-                    // Wait a bit longer to ensure tab is fully visible
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
-                    // Initialize map using the SAME approach that works for spots
+                    // Get map container
                     const mapContainer = document.getElementById('mapContainer');
                     if (!mapContainer) {
                         console.error('Map container not found!');
