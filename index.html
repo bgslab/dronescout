@@ -1758,32 +1758,23 @@
             // Render ALL telemetry stats dynamically
             function renderAllTelemetryStats(stats) {
                 // Field display configuration with units and formatting
+                // Based on actual Skydio API fields (see field report in console)
                 const fieldConfig = {
-                    // Speed fields
-                    speed: { label: 'Speed', unit: 'speed', decimals: 1, showMinMax: true },
-                    velocity: { label: 'Velocity', unit: 'speed', decimals: 1, showMinMax: true },
+                    // Speed field (Skydio calls it 'velocity')
+                    velocity: { label: 'Speed', unit: 'speed', decimals: 1, showMinMax: true },
 
                     // Height/Altitude fields
                     height_above_takeoff: { label: 'Height AGL', unit: 'distance', decimals: 0, showMinMax: true },
-                    altitude: { label: 'Altitude MSL', unit: 'distance', decimals: 0, showMinMax: true },
+                    hybrid_altitude: { label: 'Altitude', unit: 'distance', decimals: 0, showMinMax: true },
+                    altitude: { label: 'Altitude (broken)', unit: 'distance', decimals: 0, showMinMax: true }, // All zeros
 
-                    // Battery fields
+                    // Battery field
                     battery_percentage: { label: 'Battery', unit: 'percent', decimals: 0, showChange: true },
 
-                    // Wind fields
-                    wind_speed: { label: 'Wind Speed', unit: 'speed', decimals: 1, showMinMax: true },
-                    wind_direction: { label: 'Wind Direction', unit: 'degrees', decimals: 0, showMinMax: false },
-
-                    // Orientation fields
-                    heading: { label: 'Heading', unit: 'degrees', decimals: 0, showMinMax: false },
-                    pitch: { label: 'Pitch', unit: 'degrees', decimals: 1, showMinMax: false },
-                    roll: { label: 'Roll', unit: 'degrees', decimals: 1, showMinMax: false },
-                    yaw: { label: 'Yaw', unit: 'degrees', decimals: 1, showMinMax: false },
-
-                    // Gimbal fields
-                    gimbal_pitch: { label: 'Gimbal Pitch', unit: 'degrees', decimals: 1, showMinMax: false },
-                    gimbal_yaw: { label: 'Gimbal Yaw', unit: 'degrees', decimals: 1, showMinMax: false },
-                    gimbal_roll: { label: 'Gimbal Roll', unit: 'degrees', decimals: 1, showMinMax: false },
+                    // GPS Quality fields
+                    gps_num_satellites: { label: 'GPS Satellites', unit: 'count', decimals: 0, showMinMax: false },
+                    horizontal_accuracy_estimate: { label: 'GPS H-Accuracy', unit: 'distance', decimals: 2, showMinMax: false },
+                    vertical_accuracy_estimate: { label: 'GPS V-Accuracy', unit: 'distance', decimals: 2, showMinMax: false },
                 };
 
                 // Unit conversion and formatting functions
@@ -1811,6 +1802,11 @@
                         case 'degrees':
                             return {
                                 primary: `${value.toFixed(decimals)}°`,
+                                secondary: null
+                            };
+                        case 'count':
+                            return {
+                                primary: Math.round(value).toString(),
                                 secondary: null
                             };
                         default:
