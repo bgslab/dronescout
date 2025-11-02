@@ -1254,8 +1254,12 @@
                 }
             ];
 
-            // Unsplash API configuration
+            // API Keys
             const UNSPLASH_API_KEY = 'PWgTvrIDkfEdi93dvP2knidPZa7z8IbdhnvbZRrBIw4';
+
+            // Google Places API - Get your key at: https://console.cloud.google.com/google/maps-apis/credentials
+            // Enable: Places API (New), Maps JavaScript API
+            const GOOGLE_PLACES_API_KEY = 'YOUR_GOOGLE_PLACES_API_KEY_HERE';
 
             // Fetch real images from Unsplash API (location-specific)
             async function fetchUnsplashImage(category, locationName = '', spotName = '') {
@@ -1646,7 +1650,386 @@
                 }
             }
 
-            // Overpass API POI search functions
+            // ========================================
+            // V10.0: GOOGLE PLACES API INTEGRATION
+            // ========================================
+
+            /**
+             * Search for scenic locations using Google Places API
+             * Returns verified locations with real names, photos, and ratings
+             */
+            async function searchGooglePlaces(lat, lng, radiusMeters, locationName = '') {
+                try {
+                    console.log(`🔍 Google Places search: ${radiusMeters}m radius from [${lat.toFixed(4)}, ${lng.toFixed(4)}]`);
+
+                    // Check if API key is configured
+                    if (!GOOGLE_PLACES_API_KEY || GOOGLE_PLACES_API_KEY === 'YOUR_GOOGLE_PLACES_API_KEY_HERE') {
+                        console.warn('⚠️ Google Places API key not configured. Using OSM fallback.');
+                        return { success: false, error: 'API key not configured' };
+                    }
+
+                    // Google Places types that are good for drone photography
+                    const placeTypes = [
+                        'tourist_attraction',
+                        'park',
+                        'natural_feature',
+                        'point_of_interest',
+                        'campground',
+                        'beach'
+                    ].join('|');
+
+                    // Nearby Search API endpoint
+                    const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?` +
+                                `location=${lat},${lng}&` +
+                                `radius=${radiusMeters}&` +
+                                `type=${placeTypes}&` +
+                                `key=${GOOGLE_PLACES_API_KEY}`;
+
+                    const response = await fetch(url);
+
+                    if (!response.ok) {
+                        console.error('Google Places API error:', response.status);
+                        return { success: false, error: `API error: ${response.status}` };
+                    }
+
+                    const data = await response.json();
+
+                    if (data.status === 'REQUEST_DENIED') {
+                        console.error('Google Places API key invalid:', data.error_message);
+                        return { success: false, error: 'Invalid API key' };
+                    }
+
+                    if (data.status === 'ZERO_RESULTS' || !data.results || data.results.length === 0) {
+                        console.warn('No Google Places found in this area');
+                        return { success: false, error: 'No places found' };
+                    }
+
+                    console.log(`✅ Found ${data.results.length} Google Places`);
+
+                    // Filter and process places
+                    const processedSpots = await processGooglePlaces(
+                        data.results,
+                        lat,
+                        lng,
+                        locationName
+                    );
+
+                    return {
+                        success: true,
+                        spots: processedSpots,
+                        count: processedSpots.length
+                    };
+
+                } catch (error) {
+                    console.error('❌ Google Places search error:', error);
+                    return { success: false, error: error.message };
+                }
+            }
+
+            /**
+             * Fetch photo from Google Places Photos API
+             */
+            async function fetchGooglePlacesPhoto(photoReference, maxWidth = 800) {
+                try {
+                    if (!photoReference) {
+                        return null;
+                    }
+
+                    const photoUrl = `https://maps.googleapis.com/maps/api/place/photo?` +
+                                    `maxwidth=${maxWidth}&` +
+                                    `photoreference=${photoReference}&` +
+                                    `key=${GOOGLE_PLACES_API_KEY}`;
+
+                    // Google Photos API returns redirect to actual image
+                    // We can use the URL directly in img src
+                    return photoUrl;
+
+                } catch (error) {
+                    console.error('Google Places photo error:', error);
+                    return null;
+                }
+            }
+
+            /**
+             * Get additional place details including photos
+             */
+            async function getGooglePlaceDetails(placeId) {
+                try {
+                    const url = `https://maps.googleapis.com/maps/api/place/details/json?` +
+                                `place_id=${placeId}&` +
+                                `fields=name,geometry,photos,rating,types,formatted_address,opening_hours,website&` +
+                                `key=${GOOGLE_PLACES_API_KEY}`;
+
+                    const response = await fetch(url);
+                    if (!response.ok) return null;
+
+                    const data = await response.json();
+                    return data.result;
+
+                } catch (error) {
+                    console.error('Place details error:', error);
+                    return null;
+                }
+            }
+
+            /**
+             * Process Google Places results into DroneScout spot format
+             */
+            async function processGooglePlaces(places, centerLat, centerLng, locationName = '') {
+                const spots = [];
+
+                // Limit to first 15 spots
+                const limitedPlaces = places.slice(0, 15);
+
+                for (let index = 0; index < limitedPlaces.length; index++) {
+                    const place = limitedPlaces[index];
+
+                    try {
+                        const placeLat = place.geometry.location.lat;
+                        const placeLng = place.geometry.location.lng;
+
+                        // Calculate distance
+                        const distance = calculateDistance(centerLat, centerLng, placeLat, placeLng);
+
+                        // Determine spot type from Google Place types
+                        const spotType = determineSpotTypeFromGooglePlace(place);
+
+                        // Get photo (use first photo if available)
+                        let imageUrl = null;
+                        let imageSource = 'placeholder';
+
+                        if (place.photos && place.photos.length > 0) {
+                            // Use Google Places photo
+                            imageUrl = await fetchGooglePlacesPhoto(place.photos[0].photo_reference);
+                            imageSource = 'google_places';
+                            console.log(`📸 Using Google Places photo for: ${place.name}`);
+                        }
+
+                        // Fallback to Street View or Unsplash if no Google photo
+                        if (!imageUrl) {
+                            console.log(`🔄 No Google photo for ${place.name}, trying Street View/Unsplash`);
+                            const fallbackImage = await fetchLocationImage(
+                                placeLat,
+                                placeLng,
+                                spotType.category,
+                                place.name
+                            );
+                            imageUrl = fallbackImage.imageUrl;
+                            imageSource = fallbackImage.source;
+                        }
+
+                        // Fetch weather and obstacles in parallel
+                        const [weatherData, obstacleData] = await Promise.all([
+                            fetchCurrentWeather(placeLat, placeLng, 'imperial'),
+                            detectObstacles(placeLat, placeLng, 500).catch(() => ({ count: 0, types: [], risk: 'low' }))
+                        ]);
+
+                        // Build spot object
+                        spots.push({
+                            id: place.place_id,
+                            name: place.name,
+                            description: generateDescriptionFromGooglePlace(place, locationName),
+                            coordinates: { lat: placeLat, lng: placeLng },
+                            imageUrl: imageUrl,
+                            imageSource: imageSource,
+                            imageMetadata: {
+                                googlePlaceId: place.place_id,
+                                rating: place.rating,
+                                userRatingsTotal: place.user_ratings_total
+                            },
+                            flightInstructions: generateFlightInstructions(spotType, {
+                                name: place.name,
+                                types: place.types
+                            }),
+                            bestTime: spotType.bestTime,
+                            x10Advantage: "X10's advanced autonomy and Nightsense capability enable safe navigation and stunning shots in varied lighting conditions.",
+                            distance: `${distance.toFixed(1)} mi`,
+                            riskScore: calculateRiskScoreFromGooglePlace(place, obstacleData),
+                            shotTypes: spotType.shotTypes,
+                            airspaceDetails: {
+                                class: "Class G (Uncontrolled)",
+                                ceiling: "Up to 400 ft AGL authorized",
+                                laancRequired: "Check local requirements",
+                                nearestAirport: "Verify on SkyVector/B4UFLY"
+                            },
+                            regulations: [
+                                { authority: "FAA Part 107", rule: "Visual line of sight required (unless BVLOS waiver)", compliant: true },
+                                { authority: "Local Authority", rule: "Verify local drone regulations before flight", compliant: true }
+                            ],
+                            weather: weatherData.weather,
+                            weatherError: weatherData.error,
+                            weatherConditions: weatherData.weather ? {
+                                wind: `${weatherData.weather.windSpeed} ${weatherData.weather.windSpeedUnit}`,
+                                visibility: `${weatherData.weather.visibility} ${weatherData.weather.visibilityUnit}`,
+                                temp: `${weatherData.weather.temp}${weatherData.weather.tempUnit}`,
+                                conditions: weatherData.weather.conditions
+                            } : {
+                                wind: "Check current conditions",
+                                visibility: "Check current conditions",
+                                temp: "Check current conditions",
+                                conditions: "Verify before flight"
+                            },
+                            intelligence: {
+                                obstacles: obstacleData,
+                                access: { status: 'public', score: 15 }, // Google Places are typically public
+                                populationDensity: estimatePopulationDensity(locationName, { types: place.types }),
+                                cellCoverage: 'good', // Assume good coverage for popular places
+                                googleRating: place.rating,
+                                googleReviews: place.user_ratings_total
+                            }
+                        });
+
+                    } catch (error) {
+                        console.error(`Error processing place ${place.name}:`, error);
+                    }
+                }
+
+                // Sort by distance
+                return spots.sort((a, b) => {
+                    const distA = parseFloat(a.distance);
+                    const distB = parseFloat(b.distance);
+                    return distA - distB;
+                });
+            }
+
+            /**
+             * Determine spot type from Google Place types
+             */
+            function determineSpotTypeFromGooglePlace(place) {
+                const types = place.types || [];
+                const name = (place.name || '').toLowerCase();
+
+                // Check for water/beach
+                if (types.includes('beach') || types.includes('lake') || name.includes('beach') || name.includes('lake')) {
+                    return {
+                        category: 'water',
+                        name: 'Water Feature',
+                        bestTime: 'Early morning for calm water',
+                        shotTypes: { nature: 60, landscape: 40, cityscape: 0, architecture: 0 }
+                    };
+                }
+
+                // Check for parks
+                if (types.includes('park') || types.includes('campground')) {
+                    return {
+                        category: 'park',
+                        name: 'Park',
+                        bestTime: 'Golden hour',
+                        shotTypes: { nature: 50, landscape: 30, cityscape: 20, architecture: 0 }
+                    };
+                }
+
+                // Check for natural features
+                if (types.includes('natural_feature') || name.includes('mountain') || name.includes('hill')) {
+                    return {
+                        category: 'viewpoint',
+                        name: 'Viewpoint',
+                        bestTime: 'Golden hour (sunrise/sunset)',
+                        shotTypes: { landscape: 80, nature: 20, cityscape: 0, architecture: 0 }
+                    };
+                }
+
+                // Default to tourist attraction
+                return {
+                    category: 'landmark',
+                    name: 'Landmark',
+                    bestTime: 'Golden hour or blue hour',
+                    shotTypes: { architecture: 40, cityscape: 30, landscape: 20, nature: 10 }
+                };
+            }
+
+            /**
+             * Generate description from Google Place data
+             */
+            function generateDescriptionFromGooglePlace(place, locationName = '') {
+                const parts = [];
+
+                // Use Google's name (it's verified and accurate)
+                parts.push(place.name);
+
+                // Add rating if available
+                if (place.rating && place.user_ratings_total) {
+                    parts.push(`${place.rating}★ (${place.user_ratings_total} reviews)`);
+                }
+
+                // Add types
+                if (place.types && place.types.length > 0) {
+                    const readableTypes = place.types
+                        .filter(t => !t.includes('point_of_interest') && !t.includes('establishment'))
+                        .map(t => t.replace(/_/g, ' '))
+                        .slice(0, 2);
+                    if (readableTypes.length > 0) {
+                        parts.push(readableTypes.join(', '));
+                    }
+                }
+
+                return parts.join(' • ');
+            }
+
+            /**
+             * Calculate risk score from Google Place
+             */
+            function calculateRiskScoreFromGooglePlace(place, obstacleData) {
+                let risk = 'low';
+
+                // Check obstacles
+                if (obstacleData.count > 5) {
+                    risk = 'high';
+                } else if (obstacleData.count > 2) {
+                    risk = 'medium';
+                }
+
+                // Popular places with lots of people
+                if (place.user_ratings_total > 1000) {
+                    risk = 'medium'; // Potentially crowded
+                }
+
+                return risk;
+            }
+
+            /**
+             * V10.0: Unified search function - tries Google Places first, falls back to OSM
+             * This is the main entry point for POI searching
+             */
+            async function searchForDroneSpots(lat, lng, radiusKm = null, locationName = '') {
+                try {
+                    // Use user profile radius if not specified
+                    if (!radiusKm) {
+                        radiusKm = state.userProfile.preferences.searchRadius_mi * 1.60934; // Convert miles to km
+                    }
+
+                    const radiusMeters = radiusKm * 1000;
+
+                    console.log(`🚁 Searching for drone spots: ${radiusKm.toFixed(1)}km (${(radiusKm * 0.621371).toFixed(1)} mi) radius`);
+
+                    // Try Google Places first
+                    const googleResult = await searchGooglePlaces(lat, lng, radiusMeters, locationName);
+
+                    if (googleResult.success && googleResult.spots.length > 0) {
+                        console.log(`✅ Using ${googleResult.count} spots from Google Places`);
+                        return googleResult.spots;
+                    }
+
+                    // Fallback to OpenStreetMap
+                    console.log('⚠️ Google Places unavailable or returned no results. Trying OpenStreetMap...');
+                    const osmSpots = await searchPOIsNearLocation(lat, lng, radiusKm, locationName);
+
+                    if (osmSpots && osmSpots.length > 0) {
+                        console.log(`✅ Using ${osmSpots.length} spots from OpenStreetMap`);
+                        return osmSpots;
+                    }
+
+                    console.warn('❌ No spots found from any source');
+                    return [];
+
+                } catch (error) {
+                    console.error('Search error:', error);
+                    return [];
+                }
+            }
+
+            // ========================================
+            // LEGACY: Overpass API POI search functions
             // V10.0: Use user's preferred search radius
             async function searchPOIsNearLocation(lat, lng, radiusKm = null, locationName = '') {
                 try {
@@ -4396,6 +4779,36 @@
                         </div>
 
                         <div class="settings-section">
+                            <div class="settings-section-title">🗺️ Google Places API (V10.0)</div>
+                            <div class="sync-info" style="margin-bottom: 15px;">
+                                ${GOOGLE_PLACES_API_KEY === 'YOUR_GOOGLE_PLACES_API_KEY_HERE' ?
+                                    `<div style="background: #fff3cd; padding: 12px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 10px;">
+                                        <strong>⚠️ API Key Required</strong><br>
+                                        DroneScout uses Google Places to find verified, accurate drone spots with real photos.<br><br>
+                                        <strong>Setup Instructions:</strong>
+                                        <ol style="margin: 10px 0 10px 20px; font-size: 13px;">
+                                            <li>Go to <a href="https://console.cloud.google.com/google/maps-apis/credentials" target="_blank" style="color: #1e3c72;">Google Cloud Console</a></li>
+                                            <li>Create a new API key</li>
+                                            <li>Enable: <strong>Places API (New)</strong> and <strong>Maps JavaScript API</strong></li>
+                                            <li>Open the HTML file in a text editor</li>
+                                            <li>Find line ~1262: <code>const GOOGLE_PLACES_API_KEY = 'YOUR_GOOGLE_PLACES_API_KEY_HERE';</code></li>
+                                            <li>Replace <code>YOUR_GOOGLE_PLACES_API_KEY_HERE</code> with your key</li>
+                                        </ol>
+                                        <small style="color: #666;">
+                                            Without an API key, DroneScout falls back to OpenStreetMap (lower quality data).<br>
+                                            Free tier: 5,000 requests/month • Then $17/1,000 requests
+                                        </small>
+                                    </div>` :
+                                    `<div style="background: #d4edda; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745;">
+                                        <strong>✅ Google Places API Enabled</strong><br>
+                                        Finding verified locations with real photos from Google.<br>
+                                        <small style="color: #666;">Falls back to OpenStreetMap if no Google results found.</small>
+                                    </div>`
+                                }
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
                             <div class="advanced-toggle" id="advancedToggle">
                                 <span>⚙️ Advanced Settings</span>
                                 <span>▶</span>
@@ -4786,8 +5199,8 @@
                                         lon: location.lng
                                     };
 
-                                    // Step 2: Search for POIs near the location
-                                    const pois = await searchPOIsNearLocation(location.lat, location.lng, 10, location.displayName);
+                                    // Step 2: Search for POIs near the location (Google Places → OSM fallback)
+                                    const pois = await searchForDroneSpots(location.lat, location.lng, null, location.displayName);
 
                                     if (pois && pois.length > 0) {
                                         // Success: Use real POI data
@@ -4862,8 +5275,8 @@
                                 lon: state.userLocation.lng
                             };
 
-                            // Search for POIs near current location
-                            const pois = await searchPOIsNearLocation(
+                            // Search for POIs near current location (Google Places → OSM fallback)
+                            const pois = await searchForDroneSpots(
                                 state.userLocation.lat,
                                 state.userLocation.lng,
                                 null, // Use user profile radius
@@ -5135,22 +5548,22 @@
                                     state.routeStartCoords = startLocation;
                                     state.routeEndCoords = endLocation;
 
-                                    // Search for POIs along the route (use midpoint for now)
+                                    // Search for POIs along the route (use midpoint for now) - Google Places → OSM fallback
                                     const midLat = (startLocation.lat + endLocation.lat) / 2;
                                     const midLng = (startLocation.lng + endLocation.lng) / 2;
-                                    const pois = await searchPOIsNearLocation(midLat, midLng, 20, `${state.routeStart} to ${state.routeEnd}`);
+                                    const pois = await searchForDroneSpots(midLat, midLng, 20, `${state.routeStart} to ${state.routeEnd}`);
 
-                                    state.spots = pois && pois.length > 0 ? pois : scenicSpots;
+                                    state.spots = pois && pois.length > 0 ? pois : [];
                                 } else {
                                     state.routeStartCoords = null;
                                     state.routeEndCoords = null;
-                                    state.spots = scenicSpots;
+                                    state.spots = [];
                                 }
                             } catch (error) {
                                 console.error('Route geocoding error:', error);
                                 state.routeStartCoords = null;
                                 state.routeEndCoords = null;
-                                state.spots = scenicSpots;
+                                state.spots = [];
                             } finally {
                                 findRouteSpotsBtn.disabled = false;
                                 findRouteSpotsBtn.textContent = 'Find Spots Along Route';
