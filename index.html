@@ -1960,15 +1960,40 @@
                     // Determine spot type and generate appropriate data
                     const tags = element.tags || {};
                     const spotType = determineSpotType(tags, locationName, tags);
-                    const name = tags.name || `${spotType.name} ${index + 1}`;
+
+                    // V10.0: Get real place name from reverse geocoding if OSM name missing
+                    let name = tags.name;
+                    let realLocationName = locationName;
+
+                    if (!name) {
+                        // No OSM name - do reverse geocoding to get real address/place name
+                        const reverseGeocode = await fetch(
+                            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${poiLat}&lon=${poiLng}&zoom=18&addressdetails=1`,
+                            { headers: { 'User-Agent': 'DroneScout/10.0' } }
+                        ).then(r => r.json()).catch(() => null);
+
+                        if (reverseGeocode) {
+                            // Build a meaningful name from address components
+                            const addr = reverseGeocode.address || {};
+                            name = addr.road || addr.neighbourhood || addr.suburb ||
+                                   addr.village || addr.hamlet || addr.town ||
+                                   reverseGeocode.display_name?.split(',')[0] ||
+                                   `${spotType.name} at ${addr.city || addr.county || 'Unknown Location'}`;
+
+                            realLocationName = reverseGeocode.display_name || locationName;
+                            console.log(`🏷️ Reverse geocoded: "${name}" from`, addr);
+                        } else {
+                            name = `${spotType.name} ${index + 1}`;
+                        }
+                    }
 
                     // Debug: Log OSM tags to see what data is available
                     console.log(`📍 Spot: ${name}`, 'OSM Tags:', tags);
 
                     // V10.0: Fetch image, weather, and obstacles in parallel
-                    // Obstacle detection is wrapped to never fail the entire spot loading
+                    // Use real location name for better image search
                     const [imageData, weatherData, obstacleData] = await Promise.all([
-                        fetchLocationImage(poiLat, poiLng, spotType.category, locationName),
+                        fetchLocationImage(poiLat, poiLng, spotType.category, name),
                         fetchCurrentWeather(poiLat, poiLng, 'imperial'),
                         detectObstacles(poiLat, poiLng, 500).catch(() => ({ count: 0, types: [], risk: 'low' }))
                     ]);
@@ -1982,7 +2007,7 @@
                     spots.push({
                         id: element.id || Date.now() + index,
                         name: name,
-                        description: generateDescription(tags, spotType, locationName),
+                        description: generateDescription(tags, spotType, realLocationName, name),
                         coordinates: { lat: poiLat, lng: poiLng },
                         imageUrl: imageData.imageUrl,
                         imageSource: imageData.source, // 'streetview' or 'unsplash'
@@ -2196,19 +2221,28 @@
             }
 
             // Generate description based on tags
-            function generateDescription(tags, spotType, locationName = '') {
+            function generateDescription(tags, spotType, locationName = '', spotName = '') {
                 // Use real OSM description if available
                 if (tags.description) {
                     return tags.description;
                 }
 
-                // Build description from available OSM tags
+                // Build description from available OSM tags and location name
                 let parts = [];
                 let context = [];
 
-                // Add location context early if we have it and no city tag
-                if (locationName && !tags['addr:city']) {
-                    context.push(`near ${locationName}`);
+                // Use spot name if it's meaningful (not generic like "Viewpoint 1")
+                if (spotName && !spotName.match(/Viewpoint \d+|Park \d+|Water Feature \d+/)) {
+                    // We have a real location name - use it!
+                    parts.push(spotName);
+                }
+
+                // Add location context
+                if (locationName) {
+                    const cleanLocation = locationName.split(',').slice(0, 2).join(',');
+                    if (!parts.some(p => p.includes(cleanLocation))) {
+                        context.push(cleanLocation);
+                    }
                 }
 
                 // Primary feature description with more detail
@@ -2274,22 +2308,18 @@
                 if (parts.length > 0) {
                     desc = parts.join(' ');
                     if (context.length > 0) {
-                        desc += ` (${context.join(', ')})`;
+                        desc += ` - ${context.join(', ')}`;
                     }
-                    desc += '. ' + getGenericDroneAdvice(tags, spotType);
                     return desc;
                 }
 
                 // If no specific parts, at least include context
                 if (context.length > 0) {
-                    const firstContext = context[0].charAt(0).toUpperCase() + context[0].slice(1);
-                    desc = context.length > 1 ? firstContext + ', ' + context.slice(1).join(', ') : firstContext;
-                    desc += '. ' + getGenericDroneAdvice(tags, spotType);
-                    return desc;
+                    return context.join(', ');
                 }
 
-                // Fallback to generic description
-                return getGenericDroneAdvice(tags, spotType);
+                // Fallback - shouldn't hit this with reverse geocoding
+                return `${spotType.name} location`;
             }
 
             // Get contextual drone photography advice based on spot type
