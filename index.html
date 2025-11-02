@@ -1690,7 +1690,7 @@
             }
 
             // TEST FUNCTION: Load map with known-good coordinates
-            function testMapWithGoodData() {
+            window.testMapWithGoodData = function() {
                 console.log('🧪 Testing map with known-good Chicago coordinates...');
 
                 // Clean up old map if exists
@@ -1731,7 +1731,7 @@
                 console.log('Map center:', state.map.getCenter());
                 console.log('Map zoom:', state.map.getZoom());
                 alert('🧪 Test flight loaded!\n\nIf you see map tiles, the code works.\nIf still gray, there\'s a code issue.');
-            }
+            };
 
             // V6: Map initialization and management
             function initMap() {
