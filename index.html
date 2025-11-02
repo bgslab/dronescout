@@ -1655,56 +1655,42 @@
             // ========================================
 
             /**
-             * Search for scenic locations using Google Places API
+             * V10.0: Search for scenic locations using Google Places via Cloudflare Worker
              * Returns verified locations with real names, photos, and ratings
+             * Searches ALL types: urban, nature, architecture, water, landmarks, etc.
              */
             async function searchGooglePlaces(lat, lng, radiusMeters, locationName = '') {
                 try {
-                    console.log(`🔍 Google Places search: ${radiusMeters}m radius from [${lat.toFixed(4)}, ${lng.toFixed(4)}]`);
+                    console.log(`🔍 Google Places search via worker: ${radiusMeters}m radius from [${lat.toFixed(4)}, ${lng.toFixed(4)}]`);
 
-                    // Check if API key is configured
-                    if (!GOOGLE_PLACES_API_KEY || GOOGLE_PLACES_API_KEY === 'YOUR_GOOGLE_PLACES_API_KEY_HERE') {
-                        console.warn('⚠️ Google Places API key not configured. Using OSM fallback.');
-                        return { success: false, error: 'API key not configured' };
+                    // Check if worker URL is configured
+                    const workerUrl = state.syncSettings?.workerUrl;
+                    if (!workerUrl) {
+                        console.warn('⚠️ Worker URL not configured. Using OSM fallback.');
+                        return { success: false, error: 'Worker URL not configured' };
                     }
 
-                    // Google Places types that are good for drone photography
-                    const placeTypes = [
-                        'tourist_attraction',
-                        'park',
-                        'natural_feature',
-                        'point_of_interest',
-                        'campground',
-                        'beach'
-                    ].join('|');
+                    // Call Cloudflare Worker endpoint (no CORS issues!)
+                    const url = `${workerUrl}/api/places/nearbysearch?lat=${lat}&lon=${lng}&radius=${radiusMeters}`;
 
-                    // Nearby Search API endpoint
-                    const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?` +
-                                `location=${lat},${lng}&` +
-                                `radius=${radiusMeters}&` +
-                                `type=${placeTypes}&` +
-                                `key=${GOOGLE_PLACES_API_KEY}`;
+                    console.log(`📡 Fetching from worker: ${url}`);
 
                     const response = await fetch(url);
 
                     if (!response.ok) {
-                        console.error('Google Places API error:', response.status);
-                        return { success: false, error: `API error: ${response.status}` };
+                        console.error('Worker API error:', response.status);
+                        return { success: false, error: `Worker error: ${response.status}` };
                     }
 
                     const data = await response.json();
 
-                    if (data.status === 'REQUEST_DENIED') {
-                        console.error('Google Places API key invalid:', data.error_message);
-                        return { success: false, error: 'Invalid API key' };
-                    }
-
-                    if (data.status === 'ZERO_RESULTS' || !data.results || data.results.length === 0) {
+                    if (!data.success || !data.results || data.results.length === 0) {
                         console.warn('No Google Places found in this area');
-                        return { success: false, error: 'No places found' };
+                        return { success: false, error: data.error || 'No places found' };
                     }
 
-                    console.log(`✅ Found ${data.results.length} Google Places`);
+                    console.log(`✅ Found ${data.count} unique Google Places (from ${data.totalRawResults} raw results)`);
+                    console.log(`📋 Search types: ${data.searchTypes?.join(', ')}`);
 
                     // Filter and process places
                     const processedSpots = await processGooglePlaces(
@@ -1727,7 +1713,7 @@
             }
 
             /**
-             * Fetch photo from Google Places Photos API
+             * Fetch photo from Google Places Photos API via worker
              */
             async function fetchGooglePlacesPhoto(photoReference, maxWidth = 800) {
                 try {
@@ -1735,14 +1721,22 @@
                         return null;
                     }
 
-                    const photoUrl = `https://maps.googleapis.com/maps/api/place/photo?` +
-                                    `maxwidth=${maxWidth}&` +
-                                    `photoreference=${photoReference}&` +
-                                    `key=${GOOGLE_PLACES_API_KEY}`;
+                    const workerUrl = state.syncSettings?.workerUrl;
+                    if (!workerUrl) {
+                        console.warn('Worker URL not configured for photo fetch');
+                        return null;
+                    }
 
-                    // Google Photos API returns redirect to actual image
-                    // We can use the URL directly in img src
-                    return photoUrl;
+                    // Get photo URL from worker (worker handles API key)
+                    const response = await fetch(`${workerUrl}/api/places/photo?photo_reference=${photoReference}&maxwidth=${maxWidth}`);
+
+                    if (!response.ok) {
+                        console.error('Photo fetch error:', response.status);
+                        return null;
+                    }
+
+                    const data = await response.json();
+                    return data.photoUrl || null;
 
                 } catch (error) {
                     console.error('Google Places photo error:', error);
@@ -4779,30 +4773,33 @@
                         </div>
 
                         <div class="settings-section">
-                            <div class="settings-section-title">🗺️ Google Places API (V10.0)</div>
+                            <div class="settings-section-title">🗺️ Google Places Integration (V10.0)</div>
                             <div class="sync-info" style="margin-bottom: 15px;">
-                                ${GOOGLE_PLACES_API_KEY === 'YOUR_GOOGLE_PLACES_API_KEY_HERE' ?
-                                    `<div style="background: #fff3cd; padding: 12px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 10px;">
-                                        <strong>⚠️ API Key Required</strong><br>
-                                        DroneScout uses Google Places to find verified, accurate drone spots with real photos.<br><br>
-                                        <strong>Setup Instructions:</strong>
-                                        <ol style="margin: 10px 0 10px 20px; font-size: 13px;">
-                                            <li>Go to <a href="https://console.cloud.google.com/google/maps-apis/credentials" target="_blank" style="color: #1e3c72;">Google Cloud Console</a></li>
-                                            <li>Create a new API key</li>
-                                            <li>Enable: <strong>Places API (New)</strong> and <strong>Maps JavaScript API</strong></li>
-                                            <li>Open the HTML file in a text editor</li>
-                                            <li>Find line ~1262: <code>const GOOGLE_PLACES_API_KEY = 'YOUR_GOOGLE_PLACES_API_KEY_HERE';</code></li>
-                                            <li>Replace <code>YOUR_GOOGLE_PLACES_API_KEY_HERE</code> with your key</li>
-                                        </ol>
-                                        <small style="color: #666;">
-                                            Without an API key, DroneScout falls back to OpenStreetMap (lower quality data).<br>
-                                            Free tier: 5,000 requests/month • Then $17/1,000 requests
+                                ${state.syncSettings?.workerUrl ?
+                                    `<div style="background: #d4edda; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745;">
+                                        <strong>✅ Google Places via Cloudflare Worker</strong><br>
+                                        Searching comprehensive location types via your worker:<br>
+                                        <small style="color: #666; display: block; margin-top: 8px;">
+                                            • Nature: parks, beaches, lakes, campgrounds<br>
+                                            • Urban: landmarks, stadiums, museums, universities<br>
+                                            • Architecture: churches, bridges, observation towers<br>
+                                            • Water: marinas, harbors, waterfronts<br>
+                                            • Infrastructure: airports, train stations<br><br>
+                                            Worker handles API key securely (no CORS issues)
                                         </small>
                                     </div>` :
-                                    `<div style="background: #d4edda; padding: 12px; border-radius: 8px; border-left: 4px solid #28a745;">
-                                        <strong>✅ Google Places API Enabled</strong><br>
-                                        Finding verified locations with real photos from Google.<br>
-                                        <small style="color: #666;">Falls back to OpenStreetMap if no Google results found.</small>
+                                    `<div style="background: #fff3cd; padding: 12px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 10px;">
+                                        <strong>⚠️ Worker URL Required</strong><br>
+                                        DroneScout uses Google Places via Cloudflare Worker to find verified drone spots.<br><br>
+                                        <strong>Setup:</strong>
+                                        <ol style="margin: 10px 0 10px 20px; font-size: 13px;">
+                                            <li>Deploy cloudflare-worker.js to Cloudflare Workers</li>
+                                            <li>Set GOOGLE_MAPS_API_KEY in worker environment</li>
+                                            <li>Enter Worker URL in "Advanced Settings" below</li>
+                                        </ol>
+                                        <small style="color: #666;">
+                                            Without worker configured, DroneScout falls back to OpenStreetMap (lower quality data).
+                                        </small>
                                     </div>`
                                 }
                             </div>

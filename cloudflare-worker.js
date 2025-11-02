@@ -88,7 +88,20 @@ export default {
       }
 
       // Route requests - Google Places API
+      // V10.0: Comprehensive POI search for drone spots
       if (path === '/api/places/nearbysearch' && request.method === 'GET') {
+        const lat = url.searchParams.get('lat');
+        const lon = url.searchParams.get('lon');
+        const radius = url.searchParams.get('radius') || '15000'; // Default 15km (9.3 miles)
+
+        if (!lat || !lon) {
+          return jsonResponse({ error: 'Missing lat or lon parameter' }, 400);
+        }
+        return await handleComprehensivePlacesSearch(lat, lon, radius, env.GOOGLE_MAPS_API_KEY);
+      }
+
+      // Legacy single place lookup (kept for backward compatibility)
+      if (path === '/api/places/lookup' && request.method === 'GET') {
         const lat = url.searchParams.get('lat');
         const lon = url.searchParams.get('lon');
         const name = url.searchParams.get('name');
@@ -107,6 +120,24 @@ export default {
           return jsonResponse({ error: 'Missing place_id parameter' }, 400);
         }
         return await handlePlaceDetails(placeId, env.GOOGLE_MAPS_API_KEY);
+      }
+
+      // V10.0: Google Places Photo proxy (returns direct image URL)
+      if (path === '/api/places/photo' && request.method === 'GET') {
+        const photoReference = url.searchParams.get('photo_reference');
+        const maxWidth = url.searchParams.get('maxwidth') || '800';
+
+        if (!photoReference) {
+          return jsonResponse({ error: 'Missing photo_reference parameter' }, 400);
+        }
+
+        // Return the Google Places photo URL
+        const photoUrl = `${GOOGLE_PLACES_BASE}/photo?maxwidth=${maxWidth}&photo_reference=${photoReference}&key=${env.GOOGLE_MAPS_API_KEY}`;
+
+        return jsonResponse({
+          success: true,
+          photoUrl: photoUrl
+        });
       }
 
       return jsonResponse({ error: 'Not found' }, 404);
@@ -830,7 +861,158 @@ function assessFlyingConditions(data, units) {
 }
 
 /**
- * GET /api/places/nearbysearch
+ * V10.0: Comprehensive Places Search for Drone Photography
+ * Searches ALL types of interesting locations: urban, nature, architecture, water, etc.
+ * Returns deduplicated, scored results with photos
+ */
+async function handleComprehensivePlacesSearch(lat, lon, radius, apiKey) {
+  if (!apiKey) {
+    return jsonResponse({
+      success: false,
+      error: 'Google Maps API key not configured',
+      results: []
+    }, 500);
+  }
+
+  try {
+    const location = `${lat},${lon}`;
+
+    // COMPREHENSIVE TYPE LIST - covers everything worth photographing
+    const searchTypes = [
+      // Nature & Landscapes
+      'natural_feature',
+      'park',
+      'beach',
+      'campground',
+
+      // Water Features
+      'lake',
+      'marina',
+      'harbor',
+
+      // Urban & Architecture
+      'tourist_attraction',
+      'landmark',
+      'church',
+      'museum',
+      'stadium',
+      'university',
+
+      // Viewpoints & Overlooks
+      'point_of_interest',
+
+      // Recreation
+      'amusement_park',
+      'zoo',
+      'aquarium',
+
+      // Infrastructure (for urban shots)
+      'airport',
+      'train_station',
+      'light_rail_station',
+      'bridge'  // Note: May not be directly searchable, but POIs near bridges
+    ];
+
+    console.log(`🔍 Comprehensive Google Places search: ${radius}m radius from [${lat}, ${lon}]`);
+
+    // Make parallel requests for all types to maximize coverage
+    const searchPromises = searchTypes.map(async (type) => {
+      const searchUrl = `${GOOGLE_PLACES_BASE}/nearbysearch/json?location=${location}&radius=${radius}&type=${type}&key=${apiKey}`;
+
+      try {
+        const response = await fetch(searchUrl);
+        const data = await response.json();
+
+        if (data.status === 'OK' && data.results) {
+          console.log(`  ✅ Type "${type}": ${data.results.length} results`);
+          return data.results;
+        } else if (data.status === 'ZERO_RESULTS') {
+          console.log(`  ⚪ Type "${type}": 0 results`);
+          return [];
+        } else {
+          console.warn(`  ⚠️ Type "${type}": ${data.status}`);
+          return [];
+        }
+      } catch (error) {
+        console.error(`  ❌ Type "${type}": ${error.message}`);
+        return [];
+      }
+    });
+
+    // Wait for all searches to complete
+    const allResults = await Promise.all(searchPromises);
+
+    // Flatten and deduplicate by place_id
+    const seenPlaceIds = new Set();
+    const uniquePlaces = [];
+
+    for (const results of allResults) {
+      for (const place of results) {
+        if (!seenPlaceIds.has(place.place_id)) {
+          seenPlaceIds.add(place.place_id);
+          uniquePlaces.push(place);
+        }
+      }
+    }
+
+    console.log(`📊 Total unique places found: ${uniquePlaces.length} (from ${allResults.flat().length} raw results)`);
+
+    // Sort by rating and user count (quality filter)
+    const sortedPlaces = uniquePlaces
+      .filter(place => place.name) // Must have a name
+      .sort((a, b) => {
+        // Prioritize places with ratings and reviews
+        const scoreA = (a.rating || 0) * Math.log10((a.user_ratings_total || 0) + 10);
+        const scoreB = (b.rating || 0) * Math.log10((b.user_ratings_total || 0) + 10);
+        return scoreB - scoreA;
+      })
+      .slice(0, 40); // Limit to top 40 best places
+
+    // Format results for DroneScout
+    const formattedResults = sortedPlaces.map(place => ({
+      place_id: place.place_id,
+      name: place.name,
+      types: place.types || [],
+      vicinity: place.vicinity,
+      geometry: {
+        location: {
+          lat: place.geometry.location.lat,
+          lng: place.geometry.location.lng
+        }
+      },
+      rating: place.rating,
+      user_ratings_total: place.user_ratings_total,
+      photos: place.photos ? place.photos.slice(0, 3).map(photo => ({
+        photo_reference: photo.photo_reference,
+        height: photo.height,
+        width: photo.width
+      })) : [],
+      business_status: place.business_status,
+      opening_hours: place.opening_hours
+    }));
+
+    return jsonResponse({
+      success: true,
+      count: formattedResults.length,
+      results: formattedResults,
+      searchTypes: searchTypes,
+      totalRawResults: allResults.flat().length,
+      deduplicatedTo: uniquePlaces.length
+    });
+
+  } catch (error) {
+    console.error('Comprehensive Places Search error:', error);
+    return jsonResponse({
+      success: false,
+      error: 'Failed to search places',
+      results: [],
+      details: error.message
+    }, 500);
+  }
+}
+
+/**
+ * GET /api/places/lookup (legacy)
  * Search for a place near a location by name
  */
 async function handlePlacesNearbySearch(lat, lon, name, radius, apiKey) {
