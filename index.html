@@ -1633,9 +1633,15 @@
             }
 
             // Overpass API POI search functions
-            async function searchPOIsNearLocation(lat, lng, radiusKm = 10, locationName = '') {
+            // V10.0: Use user's preferred search radius
+            async function searchPOIsNearLocation(lat, lng, radiusKm = null, locationName = '') {
                 try {
-                    // Overpass query for diverse locations: nature, cityscape, and architecture
+                    // Use user profile radius if not specified
+                    if (!radiusKm) {
+                        radiusKm = state.userProfile.preferences.searchRadius_mi * 1.60934; // Convert miles to km
+                    }
+
+                    // V10.0: Enhanced query with access/ownership tags
                     const query = `
                         [out:json][timeout:25];
                         (
@@ -1653,7 +1659,7 @@
                           way["amenity"="place_of_worship"](around:${radiusKm * 1000},${lat},${lng});
                           way["leisure"="stadium"](around:${radiusKm * 1000},${lat},${lng});
                         );
-                        out center 40;
+                        out center tags 40;
                     `;
 
                     const response = await fetch('https://overpass-api.de/api/interpreter', {
@@ -1672,6 +1678,232 @@
                     console.error('POI search error:', error);
                     return [];
                 }
+            }
+
+            // V10.0: Detect obstacles near a location (power lines, towers, etc.)
+            async function detectObstacles(lat, lng, radiusMeters = 500) {
+                try {
+                    const query = `
+                        [out:json][timeout:10];
+                        (
+                          way["power"="line"](around:${radiusMeters},${lat},${lng});
+                          node["power"="tower"](around:${radiusMeters},${lat},${lng});
+                          node["power"="pole"](around:${radiusMeters},${lat},${lng});
+                          way["man_made"="tower"](around:${radiusMeters},${lat},${lng});
+                          node["man_made"="mast"](around:${radiusMeters},${lat},${lng});
+                          way["barrier"="wall"](around:${radiusMeters},${lat},${lng});
+                          way["barrier"="fence"]["height"](around:${radiusMeters},${lat},${lng});
+                        );
+                        out count;
+                    `;
+
+                    const response = await fetch('https://overpass-api.de/api/interpreter', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: 'data=' + encodeURIComponent(query)
+                    });
+
+                    if (!response.ok) {
+                        console.warn('Obstacle detection failed, assuming minimal obstacles');
+                        return { count: 0, types: [], risk: 'low' };
+                    }
+
+                    const data = await response.json();
+                    const count = data.elements.length;
+
+                    // Categorize obstacles found
+                    const types = [];
+                    data.elements.forEach(el => {
+                        if (el.tags) {
+                            if (el.tags.power) types.push('power infrastructure');
+                            if (el.tags.man_made === 'tower' || el.tags.man_made === 'mast') types.push('tower');
+                            if (el.tags.barrier) types.push('barrier');
+                        }
+                    });
+
+                    return {
+                        count,
+                        types: [...new Set(types)], // Remove duplicates
+                        risk: count === 0 ? 'low' : count < 3 ? 'medium' : 'high'
+                    };
+                } catch (error) {
+                    console.error('Obstacle detection error:', error);
+                    return { count: 0, types: [], risk: 'low' };
+                }
+            }
+
+            // V10.0: Estimate population density (heuristic approach)
+            function estimatePopulationDensity(locationName, tags) {
+                // Major cities - high density
+                const majorCities = /New York|NYC|Manhattan|Brooklyn|Chicago|Los Angeles|LA|San Francisco|SF|Philadelphia|Washington DC|Miami|Boston|Seattle/i;
+                if (majorCities.test(locationName)) {
+                    return {
+                        density: 'high',
+                        peoplePerSqMi: 10000,
+                        requiresWaiver: true,
+                        reason: 'Major urban area - over-people waiver required'
+                    };
+                }
+
+                // Mid-size cities - medium density
+                const midCities = /Austin|Denver|Portland|Atlanta|Dallas|Houston|Phoenix|Detroit|Nashville|Charlotte/i;
+                if (midCities.test(locationName)) {
+                    return {
+                        density: 'medium',
+                        peoplePerSqMi: 3000,
+                        requiresWaiver: true,
+                        reason: 'Urban area - check crowd density at flight time'
+                    };
+                }
+
+                // Check OSM tags for urban indicators
+                if (tags.building || tags['building:levels'] || tags.shop || tags.office || tags.amenity === 'restaurant') {
+                    return {
+                        density: 'medium',
+                        peoplePerSqMi: 2000,
+                        requiresWaiver: true,
+                        reason: 'Commercial/residential area - avoid crowds'
+                    };
+                }
+
+                // Nature areas - low density
+                if (tags.leisure === 'nature_reserve' || tags.landuse === 'forest' || tags.natural === 'water') {
+                    return {
+                        density: 'low',
+                        peoplePerSqMi: 100,
+                        requiresWaiver: false,
+                        reason: 'Remote natural area'
+                    };
+                }
+
+                // Parks can vary
+                if (tags.leisure === 'park') {
+                    // Urban parks might be crowded
+                    if (majorCities.test(locationName) || midCities.test(locationName)) {
+                        return {
+                            density: 'medium',
+                            peoplePerSqMi: 1500,
+                            requiresWaiver: true,
+                            reason: 'Urban park - may have crowds during peak times'
+                        };
+                    }
+                    return {
+                        density: 'low',
+                        peoplePerSqMi: 500,
+                        requiresWaiver: false,
+                        reason: 'Suburban/rural park'
+                    };
+                }
+
+                // Default: suburban/rural
+                return {
+                    density: 'low',
+                    peoplePerSqMi: 500,
+                    requiresWaiver: false,
+                    reason: 'Low population area'
+                };
+            }
+
+            // V10.0: Determine land access from OSM tags
+            function determineLandAccess(tags) {
+                // Check access tag
+                const access = tags.access || tags.Access;
+                const ownership = tags.ownership || tags.Ownership;
+                const operator = tags.operator || tags.Operator;
+
+                // Explicit access tags
+                if (access === 'private' || access === 'no') {
+                    return {
+                        status: 'restricted',
+                        type: 'private',
+                        score: 0,
+                        reason: 'Private property - no public access'
+                    };
+                }
+
+                if (access === 'permissive' || access === 'yes') {
+                    return {
+                        status: 'accessible',
+                        type: 'public',
+                        score: 15,
+                        reason: 'Public access permitted'
+                    };
+                }
+
+                if (access === 'customers' || access === 'destination') {
+                    return {
+                        status: 'restricted',
+                        type: 'limited',
+                        score: 5,
+                        reason: 'Limited access (customers only)'
+                    };
+                }
+
+                // Check ownership
+                if (ownership === 'private') {
+                    return {
+                        status: 'caution',
+                        type: 'private',
+                        score: 5,
+                        reason: 'Private property - verify access rights'
+                    };
+                }
+
+                if (ownership === 'public' || ownership === 'municipal' || ownership === 'state' || ownership === 'federal') {
+                    // Public land but may have drone restrictions
+                    if (operator && /National Park|State Park|NPS/.test(operator)) {
+                        return {
+                            status: 'permit_required',
+                            type: 'public_restricted',
+                            score: 10,
+                            reason: 'Public land - permit may be required for drones'
+                        };
+                    }
+                    return {
+                        status: 'accessible',
+                        type: 'public',
+                        score: 15,
+                        reason: 'Public land'
+                    };
+                }
+
+                // Check for specific place types that indicate access
+                if (tags.leisure === 'park' || tags.leisure === 'nature_reserve') {
+                    return {
+                        status: 'accessible',
+                        type: 'public',
+                        score: 15,
+                        reason: 'Public park/reserve'
+                    };
+                }
+
+                if (tags.tourism === 'viewpoint' || tags.tourism === 'attraction') {
+                    return {
+                        status: 'accessible',
+                        type: 'public',
+                        score: 12,
+                        reason: 'Tourist viewpoint - likely accessible'
+                    };
+                }
+
+                if (tags.landuse === 'military') {
+                    return {
+                        status: 'restricted',
+                        type: 'military',
+                        score: 0,
+                        reason: 'Military installation - no access'
+                    };
+                }
+
+                // Default: Unknown but assume public viewpoint if it's in OSM
+                return {
+                    status: 'unknown',
+                    type: 'assumed_public',
+                    score: 10,
+                    reason: 'Public access likely (verify before flight)'
+                };
             }
 
             // Process POIs into spot format (async to fetch real images + weather)
@@ -1708,11 +1940,18 @@
                     // Debug: Log OSM tags to see what data is available
                     console.log(`📍 Spot: ${name}`, 'OSM Tags:', tags);
 
-                    // Fetch real image (Street View with Unsplash fallback) AND current weather in parallel
-                    const [imageData, weatherData] = await Promise.all([
+                    // V10.0: Fetch image, weather, and obstacles in parallel
+                    const [imageData, weatherData, obstacleData] = await Promise.all([
                         fetchLocationImage(poiLat, poiLng, spotType.category, locationName),
-                        fetchCurrentWeather(poiLat, poiLng, 'imperial')
+                        fetchCurrentWeather(poiLat, poiLng, 'imperial'),
+                        detectObstacles(poiLat, poiLng, 500)
                     ]);
+
+                    // V10.0: Determine land access from OSM tags
+                    const accessInfo = determineLandAccess(tags);
+
+                    // V10.0: Estimate population density
+                    const populationInfo = estimatePopulationDensity(locationName, tags);
 
                     spots.push({
                         id: element.id || Date.now() + index,
@@ -1752,6 +1991,13 @@
                             visibility: "Check current conditions",
                             temp: "Check current conditions",
                             conditions: "Verify before flight"
+                        },
+                        // V10.0: Intelligence data for smart scoring
+                        intelligence: {
+                            obstacles: obstacleData,
+                            access: accessInfo,
+                            populationDensity: populationInfo,
+                            cellCoverage: 'unknown' // Placeholder for future enhancement
                         }
                     });
                 }
@@ -2132,24 +2378,100 @@
             }
 
             // V9.0: Calculate spot score combining distance and preference match
+            // V10.0: Intelligent scoring algorithm
             function calculateSpotScore(spot, searchCenter, preferences) {
                 if (!searchCenter) {
                     // Fallback to risk score if no search center
                     return spot.riskScore || 50;
                 }
 
-                // Distance component (0-100, closer = higher)
+                let totalScore = 0;
+                const breakdown = {
+                    legal: 0,
+                    accessibility: 0,
+                    safety: 0,
+                    photoQuality: 0
+                };
+
+                // ===== LEGAL VIABILITY (25 points) =====
+                // Local regulations (10 pts) - placeholder for now
+                breakdown.legal += 10;
+
+                // Population density with waiver check (15 pts)
+                if (spot.intelligence && spot.intelligence.populationDensity) {
+                    const popInfo = spot.intelligence.populationDensity;
+                    const hasOverPeopleWaiver = state.userProfile.waivers.some(w => w.type === 'over_people');
+
+                    if (!popInfo.requiresWaiver) {
+                        // Low density, no waiver needed
+                        breakdown.legal += 15;
+                    } else if (hasOverPeopleWaiver) {
+                        // High density but user has waiver
+                        breakdown.legal += 15;
+                    } else {
+                        // High density, no waiver = penalized
+                        breakdown.legal += 5;
+                    }
+                } else {
+                    breakdown.legal += 10; // Default middle score
+                }
+
+                // ===== ACCESSIBILITY (25 points) =====
+                // Land access (15 pts)
+                if (spot.intelligence && spot.intelligence.access) {
+                    breakdown.accessibility += spot.intelligence.access.score;
+                } else {
+                    breakdown.accessibility += 10; // Default assume accessible
+                }
+
+                // Proximity (10 pts)
                 const distance = parseFloat(spot.distance) || 0;
-                const maxDistance = 25; // miles
-                const distanceScore = Math.max(0, 100 - (distance / maxDistance * 100));
+                const maxDistance = state.userProfile.preferences.searchRadius_mi;
+                const proximityScore = Math.max(0, 10 - (distance / maxDistance * 10));
+                breakdown.accessibility += proximityScore;
 
-                // Preference match component (0-100)
-                const preferenceScore = calculatePreferenceMatch(spot.shotTypes, preferences);
+                // ===== SAFETY (20 points) =====
+                // Obstacles (10 pts)
+                if (spot.intelligence && spot.intelligence.obstacles) {
+                    const obsRisk = spot.intelligence.obstacles.risk;
+                    if (obsRisk === 'low') breakdown.safety += 10;
+                    else if (obsRisk === 'medium') breakdown.safety += 6;
+                    else breakdown.safety += 3;
+                } else {
+                    breakdown.safety += 8; // Default assume safe
+                }
 
-                // Combine: 40% distance + 60% preference
-                const finalScore = (distanceScore * 0.4) + (preferenceScore * 0.6);
+                // Emergency landing (5 pts) - check spot type
+                if (spot.shotTypes) {
+                    const hasNature = (spot.shotTypes.nature || 0) + (spot.shotTypes.landscape || 0);
+                    breakdown.safety += Math.min(5, hasNature / 20); // More nature = better emergency options
+                }
 
-                return Math.round(finalScore);
+                // Cell coverage (5 pts) - assume good for now
+                breakdown.safety += 4;
+
+                // ===== PHOTO QUALITY (30 points) =====
+                // Preference match (20 pts)
+                const preferenceMatch = calculatePreferenceMatch(spot.shotTypes, preferences);
+                breakdown.photoQuality += (preferenceMatch / 100) * 20;
+
+                // Weather conditions (10 pts)
+                if (spot.weather && spot.weather.flyable) {
+                    if (spot.weather.flyingConditions === 'excellent') breakdown.photoQuality += 10;
+                    else if (spot.weather.flyingConditions === 'good') breakdown.photoQuality += 8;
+                    else if (spot.weather.flyingConditions === 'fair') breakdown.photoQuality += 5;
+                    else breakdown.photoQuality += 2;
+                } else {
+                    breakdown.photoQuality += 6; // Default assume fair
+                }
+
+                // Calculate final score
+                totalScore = breakdown.legal + breakdown.accessibility + breakdown.safety + breakdown.photoQuality;
+
+                // Store breakdown for display in spot detail
+                spot.scoreBreakdown = breakdown;
+
+                return Math.round(totalScore);
             }
 
             // V9.0: Get match badge color based on percentage
