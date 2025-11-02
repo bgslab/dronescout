@@ -1601,14 +1601,29 @@
 
                     console.log('Container dimensions:', mapContainer.offsetWidth, 'x', mapContainer.offsetHeight);
 
-                    // Convert telemetry to LatLng array - FILTER OUT BAD COORDINATES
-                    const pathCoords = details.telemetry.track
-                        .filter(point => {
-                            // Remove invalid GPS points (0,0) and extreme outliers
-                            return point.lat !== 0 && point.lon !== 0 &&
-                                   Math.abs(point.lat) <= 90 && Math.abs(point.lon) <= 180;
-                        })
+                    // Convert telemetry to LatLng array - AGGRESSIVE FILTERING
+                    // First pass: get all non-zero points
+                    const allPoints = details.telemetry.track
+                        .filter(point => point.lat !== 0 && point.lon !== 0)
                         .map(point => [point.lat, point.lon]);
+
+                    console.log('All non-zero points:', allPoints.length);
+
+                    // Calculate median lat/lon to find the center of the actual flight
+                    const lats = allPoints.map(p => p[0]).sort((a, b) => a - b);
+                    const lons = allPoints.map(p => p[1]).sort((a, b) => a - b);
+                    const medianLat = lats[Math.floor(lats.length / 2)];
+                    const medianLon = lons[Math.floor(lons.length / 2)];
+
+                    console.log('Median center:', medianLat, medianLon);
+
+                    // Second pass: keep only points within ~50 miles (~0.7 degrees) of median
+                    // This removes GPS errors that place points in different states/countries
+                    const pathCoords = allPoints.filter(point => {
+                        const latDiff = Math.abs(point[0] - medianLat);
+                        const lonDiff = Math.abs(point[1] - medianLon);
+                        return latDiff < 0.7 && lonDiff < 0.7;
+                    });
 
                     console.log('Path coordinates (filtered):', pathCoords.length, 'First:', pathCoords[0], 'Last:', pathCoords[pathCoords.length-1]);
 
