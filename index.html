@@ -1438,15 +1438,19 @@
                                 synced: true, // V7.1: Flag for showing "View Flight Path" button
                                 name: flight.name || `Flight ${new Date(flight.created_at).toLocaleDateString()}`,
                                 date: flight.created_at,
+                                created_at: flight.created_at,
                                 duration: flight.duration_seconds,
+                                duration_seconds: flight.duration_seconds,
                                 location: flight.location || null,
                                 notes: '',
                                 mediaUrls: flight.media_urls || [],
-                                syncedAt: new Date().toISOString()
+                                syncedAt: new Date().toISOString(),
+                                metadata: flight.metadata || {}
                             };
 
                             if (existingIndex >= 0) {
                                 processedFlight.notes = state.flights[existingIndex].notes || '';
+                                processedFlight.locationName = state.flights[existingIndex].locationName || null;
                                 state.flights[existingIndex] = processedFlight;
                             } else {
                                 state.flights.unshift(processedFlight);
@@ -1456,10 +1460,13 @@
 
                     state.syncSettings.lastSync = new Date().toISOString();
                     state.syncSettings.connectionStatus = 'connected';
-                    state.syncMessage = { type: 'success', text: `Synced ${data.flights ? data.flights.length : 0} flights` };
+                    state.syncMessage = { type: 'success', text: `Synced ${data.flights ? data.flights.length : 0} flights. Resolving locations...` };
                     saveToStorage('flights', state.flights);
                     saveToStorage('syncSettings', state.syncSettings);
                     render();
+
+                    // Reverse geocode locations for newly synced flights (rate limited)
+                    await reverseGeocodeAllFlights();
                 } catch (error) {
                     console.error('Sync error:', {
                         message: error.message,
@@ -2001,6 +2008,64 @@
                     console.error('Reverse geocoding error:', error);
                     return null;
                 }
+            }
+
+            // Reverse geocode all flights that don't have location names yet
+            async function reverseGeocodeAllFlights() {
+                // Find flights that need geocoding
+                const flightsNeedingGeocode = state.flights.filter(f =>
+                    f.synced &&
+                    !f.locationName &&
+                    f.location?.lat &&
+                    f.location?.lon
+                );
+
+                if (flightsNeedingGeocode.length === 0) {
+                    console.log('No flights need geocoding');
+                    state.syncMessage = { type: 'success', text: `Synced ${state.flights.filter(f => f.synced).length} flights` };
+                    render();
+                    return;
+                }
+
+                console.log(`Geocoding ${flightsNeedingGeocode.length} flights...`);
+
+                // Process flights one at a time with 1 second delay (Nominatim rate limit)
+                for (let i = 0; i < flightsNeedingGeocode.length; i++) {
+                    const flight = flightsNeedingGeocode[i];
+
+                    // Update progress message
+                    state.syncMessage = {
+                        type: 'info',
+                        text: `Resolving locations... (${i + 1}/${flightsNeedingGeocode.length})`
+                    };
+                    render();
+
+                    // Reverse geocode
+                    const locationName = await reverseGeocode(flight.location.lat, flight.location.lon);
+
+                    if (locationName) {
+                        // Update flight in state
+                        const flightIndex = state.flights.findIndex(f => f.id === flight.id);
+                        if (flightIndex >= 0) {
+                            state.flights[flightIndex].locationName = locationName;
+                            console.log(`📍 ${flight.name} → ${locationName}`);
+                        }
+                    }
+
+                    // Wait 1 second before next request (rate limiting)
+                    if (i < flightsNeedingGeocode.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                }
+
+                // Save and update UI
+                saveToStorage('flights', state.flights);
+                state.syncMessage = {
+                    type: 'success',
+                    text: `Synced ${state.flights.filter(f => f.synced).length} flights with locations`
+                };
+                render();
+                console.log('✅ All flights geocoded');
             }
 
             // Render telemetry stats - ONLY Speed, Altitude, Distance
