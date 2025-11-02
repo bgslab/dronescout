@@ -788,6 +788,52 @@
             display: block;
         }
 
+        /* V10.0: Profile UI styles */
+        .profile-subsection {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e0e6ed;
+        }
+
+        .profile-subsection:last-child {
+            border-bottom: none;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #333;
+            cursor: pointer;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .waiver-item,
+        .drone-item {
+            background: white;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #e0e6ed;
+            margin-bottom: 10px;
+        }
+
+        .waiver-item:last-child,
+        .drone-item:last-child {
+            margin-bottom: 0;
+        }
+
         .sync-info {
             font-size: 13px;
             color: #666;
@@ -1055,6 +1101,22 @@
                     cityscape: 50,
                     nature: 50,
                     architecture: 50
+                },
+                // V10: User profile for intelligent recommendations
+                userProfile: loadFromStorage('userProfile') || {
+                    certifications: {
+                        part107: false,
+                        part107Expiry: null,
+                        trust: false
+                    },
+                    waivers: [],
+                    drones: [],
+                    preferences: {
+                        searchRadius_mi: 15,
+                        maxDriveTime_min: 20,
+                        experience: 'intermediate',
+                        avoidCrowds: true
+                    }
                 },
                 favorites: loadFromStorage('favorites') || [],
                 showFavoritesOnly: false,
@@ -3803,12 +3865,113 @@
                         </div>
 
                         <div class="settings-section">
+                            <div class="advanced-toggle" id="profileToggle">
+                                <span>👤 Pilot Profile (V10.0)</span>
+                                <span>▶</span>
+                            </div>
+                            <div class="advanced-content" id="profileContent">
+                                <div class="profile-subsection">
+                                    <h4 style="font-size: 14px; font-weight: 700; color: #1e3c72; margin: 0 0 10px 0;">Certifications</h4>
+                                    <div class="checkbox-group">
+                                        <label>
+                                            <input type="checkbox" id="part107Checkbox" ${state.userProfile.certifications.part107 ? 'checked' : ''}>
+                                            Part 107 Certified
+                                        </label>
+                                    </div>
+                                    ${state.userProfile.certifications.part107 ? `
+                                        <div class="input-group" style="margin-top: 10px;">
+                                            <label>Expiry Date</label>
+                                            <input type="date" id="part107ExpiryInput" value="${state.userProfile.certifications.part107Expiry || ''}">
+                                        </div>
+                                    ` : ''}
+                                    <div class="checkbox-group" style="margin-top: 10px;">
+                                        <label>
+                                            <input type="checkbox" id="trustCheckbox" ${state.userProfile.certifications.trust ? 'checked' : ''}>
+                                            TRUST Certified
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="profile-subsection">
+                                    <h4 style="font-size: 14px; font-weight: 700; color: #1e3c72; margin: 15px 0 10px 0;">Active Waivers</h4>
+                                    <div id="waiversList">
+                                        ${state.userProfile.waivers.map((waiver, idx) => `
+                                            <div class="waiver-item" data-idx="${idx}">
+                                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                    <div>
+                                                        <strong>${getWaiverLabel(waiver.type)}</strong>
+                                                        ${waiver.type === 'over_people' ? ` (Cat ${waiver.category})` : ''}
+                                                        <div style="font-size: 12px; color: #666;">Expires: ${formatDate(waiver.expiryDate)}</div>
+                                                        ${waiver.notes ? `<div style="font-size: 12px; color: #888;">${waiver.notes}</div>` : ''}
+                                                    </div>
+                                                    <button class="btn-secondary btn-small" onclick="removeWaiver(${idx})">Remove</button>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                    <button class="btn-secondary" id="addWaiverBtn" style="margin-top: 10px;">+ Add Waiver</button>
+                                </div>
+
+                                <div class="profile-subsection">
+                                    <h4 style="font-size: 14px; font-weight: 700; color: #1e3c72; margin: 15px 0 10px 0;">Your Drones</h4>
+                                    <div id="dronesList">
+                                        ${state.userProfile.drones.map((drone, idx) => `
+                                            <div class="drone-item" data-idx="${idx}">
+                                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                    <div>
+                                                        <strong>${drone.name}</strong>
+                                                        <div style="font-size: 12px; color: #666;">
+                                                            ${drone.weight_lbs} lbs
+                                                            ${drone.hasParachute ? ' • 🪂 Parachute' : ''}
+                                                            ${drone.hasRemoteID ? ' • 📡 Remote ID' : ''}
+                                                        </div>
+                                                    </div>
+                                                    <button class="btn-secondary btn-small" onclick="removeDrone(${idx})">Remove</button>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                    <button class="btn-secondary" id="addDroneBtn" style="margin-top: 10px;">+ Add Drone</button>
+                                </div>
+
+                                <div class="profile-subsection">
+                                    <h4 style="font-size: 14px; font-weight: 700; color: #1e3c72; margin: 15px 0 10px 0;">Search Preferences</h4>
+                                    <div class="input-group">
+                                        <label>Search Radius: ${state.userProfile.preferences.searchRadius_mi} mi (~${Math.round(state.userProfile.preferences.searchRadius_mi * 2.5)} min drive)</label>
+                                        <input type="range" id="searchRadiusSlider" min="5" max="25" step="5" value="${state.userProfile.preferences.searchRadius_mi}">
+                                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #888;">
+                                            <span>5 mi</span>
+                                            <span>15 mi</span>
+                                            <span>25 mi</span>
+                                        </div>
+                                    </div>
+                                    <div class="input-group" style="margin-top: 15px;">
+                                        <label>Experience Level</label>
+                                        <select id="experienceSelect" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                                            <option value="beginner" ${state.userProfile.preferences.experience === 'beginner' ? 'selected' : ''}>Beginner</option>
+                                            <option value="intermediate" ${state.userProfile.preferences.experience === 'intermediate' ? 'selected' : ''}>Intermediate</option>
+                                            <option value="advanced" ${state.userProfile.preferences.experience === 'advanced' ? 'selected' : ''}>Advanced</option>
+                                        </select>
+                                    </div>
+                                    <div class="checkbox-group" style="margin-top: 10px;">
+                                        <label>
+                                            <input type="checkbox" id="avoidCrowdsCheckbox" ${state.userProfile.preferences.avoidCrowds ? 'checked' : ''}>
+                                            Avoid crowded areas (if no over-people waiver)
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <button class="btn" id="saveProfileBtn" style="margin-top: 15px;">💾 Save Profile</button>
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
                             <div class="settings-section-title">About</div>
                             <p style="font-size: 14px; color: #666; line-height: 1.6;">
-                                DroneScout v5.4 - Real Images<br>
+                                DroneScout v10.0 - Intelligent Recommendations<br>
                                 Skydio X10 Optimized<br>
-                                Part 107 Certified<br>
-                                With Unsplash API & Real Location Search
+                                Part 107 Ready<br>
+                                With Google Street View, OpenWeather & OSM
                             </p>
                         </div>
                     </div>
@@ -4364,6 +4527,96 @@
                 if (exportDataBtn) {
                     exportDataBtn.addEventListener('click', exportData);
                 }
+
+                // V10.0: Profile toggle
+                const profileToggle = document.getElementById('profileToggle');
+                const profileContent = document.getElementById('profileContent');
+                if (profileToggle && profileContent) {
+                    profileToggle.addEventListener('click', () => {
+                        profileToggle.classList.toggle('open');
+                        profileContent.classList.toggle('open');
+                        const arrow = profileToggle.querySelector('span:last-child');
+                        if (arrow) {
+                            arrow.textContent = profileContent.classList.contains('open') ? '▼' : '▶';
+                        }
+                    });
+                }
+
+                // V10.0: Profile certifications
+                const part107Checkbox = document.getElementById('part107Checkbox');
+                if (part107Checkbox) {
+                    part107Checkbox.addEventListener('change', (e) => {
+                        state.userProfile.certifications.part107 = e.target.checked;
+                        if (!e.target.checked) {
+                            state.userProfile.certifications.part107Expiry = null;
+                        }
+                        render();
+                    });
+                }
+
+                const trustCheckbox = document.getElementById('trustCheckbox');
+                if (trustCheckbox) {
+                    trustCheckbox.addEventListener('change', (e) => {
+                        state.userProfile.certifications.trust = e.target.checked;
+                    });
+                }
+
+                const part107ExpiryInput = document.getElementById('part107ExpiryInput');
+                if (part107ExpiryInput) {
+                    part107ExpiryInput.addEventListener('change', (e) => {
+                        state.userProfile.certifications.part107Expiry = e.target.value;
+                    });
+                }
+
+                // V10.0: Search radius slider
+                const searchRadiusSlider = document.getElementById('searchRadiusSlider');
+                if (searchRadiusSlider) {
+                    searchRadiusSlider.addEventListener('input', (e) => {
+                        state.userProfile.preferences.searchRadius_mi = parseInt(e.target.value);
+                        render();
+                    });
+                }
+
+                // V10.0: Experience level
+                const experienceSelect = document.getElementById('experienceSelect');
+                if (experienceSelect) {
+                    experienceSelect.addEventListener('change', (e) => {
+                        state.userProfile.preferences.experience = e.target.value;
+                    });
+                }
+
+                // V10.0: Avoid crowds checkbox
+                const avoidCrowdsCheckbox = document.getElementById('avoidCrowdsCheckbox');
+                if (avoidCrowdsCheckbox) {
+                    avoidCrowdsCheckbox.addEventListener('change', (e) => {
+                        state.userProfile.preferences.avoidCrowds = e.target.checked;
+                    });
+                }
+
+                // V10.0: Save profile button
+                const saveProfileBtn = document.getElementById('saveProfileBtn');
+                if (saveProfileBtn) {
+                    saveProfileBtn.addEventListener('click', () => {
+                        saveToStorage('userProfile', state.userProfile);
+                        alert('Profile saved successfully!');
+                    });
+                }
+
+                // V10.0: Add waiver button
+                const addWaiverBtn = document.getElementById('addWaiverBtn');
+                if (addWaiverBtn) {
+                    addWaiverBtn.addEventListener('click', () => {
+                        showAddWaiverModal();
+                    });
+                }
+
+                // V10.0: Add drone button
+                const addDroneBtn = document.getElementById('addDroneBtn');
+                if (addDroneBtn) {
+                    addDroneBtn.addEventListener('click', () => {
+                        showAddDroneModal();
+                    });
+                }
             }
 
             // Helper functions
@@ -4563,6 +4816,175 @@
                 a.href = url;
                 a.download = 'dronescout-flights.csv';
                 a.click();
+            }
+
+            // V10.0: Profile helper functions
+            function getWaiverLabel(type) {
+                const labels = {
+                    'over_people': 'Over People',
+                    'night_operations': 'Night Operations',
+                    'beyond_vlos': 'Beyond Visual Line of Sight',
+                    'controlled_airspace': 'Controlled Airspace'
+                };
+                return labels[type] || type;
+            }
+
+            // V10.0: Global functions for removing items (called from inline onclick)
+            window.removeWaiver = function(idx) {
+                if (confirm('Remove this waiver?')) {
+                    state.userProfile.waivers.splice(idx, 1);
+                    render();
+                }
+            };
+
+            window.removeDrone = function(idx) {
+                if (confirm('Remove this drone?')) {
+                    state.userProfile.drones.splice(idx, 1);
+                    render();
+                }
+            };
+
+            function showAddWaiverModal() {
+                const modal = document.getElementById('savePlanModal');
+                const content = document.getElementById('savePlanContent');
+
+                content.innerHTML = `
+                    <h3 style="margin: 0 0 15px 0;">Add Waiver</h3>
+                    <div class="input-group">
+                        <label>Waiver Type</label>
+                        <select id="waiverTypeSelect" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                            <option value="over_people">Over People</option>
+                            <option value="night_operations">Night Operations</option>
+                            <option value="beyond_vlos">Beyond Visual Line of Sight</option>
+                            <option value="controlled_airspace">Controlled Airspace</option>
+                        </select>
+                    </div>
+                    <div class="input-group" id="categoryGroup" style="display: none;">
+                        <label>Category (for Over People)</label>
+                        <select id="categorySelect" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                            <option value="1">Category 1</option>
+                            <option value="2">Category 2</option>
+                            <option value="3">Category 3</option>
+                            <option value="4">Category 4</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>Expiry Date</label>
+                        <input type="date" id="waiverExpiryInput">
+                    </div>
+                    <div class="input-group">
+                        <label>Notes (optional)</label>
+                        <textarea id="waiverNotesInput" rows="2" placeholder="e.g., Parachute system equipped"></textarea>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 15px;">
+                        <button class="btn" id="confirmAddWaiver">Add Waiver</button>
+                        <button class="btn btn-secondary" id="cancelAddWaiver">Cancel</button>
+                    </div>
+                `;
+
+                modal.classList.add('active');
+
+                // Show/hide category field based on waiver type
+                const waiverTypeSelect = document.getElementById('waiverTypeSelect');
+                const categoryGroup = document.getElementById('categoryGroup');
+                waiverTypeSelect.addEventListener('change', () => {
+                    categoryGroup.style.display = waiverTypeSelect.value === 'over_people' ? 'block' : 'none';
+                });
+
+                document.getElementById('confirmAddWaiver').addEventListener('click', () => {
+                    const type = document.getElementById('waiverTypeSelect').value;
+                    const expiryDate = document.getElementById('waiverExpiryInput').value;
+                    const notes = document.getElementById('waiverNotesInput').value;
+
+                    if (expiryDate) {
+                        const waiver = {
+                            type,
+                            expiryDate,
+                            notes
+                        };
+
+                        if (type === 'over_people') {
+                            waiver.category = parseInt(document.getElementById('categorySelect').value);
+                        }
+
+                        state.userProfile.waivers.push(waiver);
+                        modal.classList.remove('active');
+                        render();
+                    } else {
+                        alert('Please select an expiry date');
+                    }
+                });
+
+                document.getElementById('cancelAddWaiver').addEventListener('click', () => {
+                    modal.classList.remove('active');
+                });
+            }
+
+            function showAddDroneModal() {
+                const modal = document.getElementById('savePlanModal');
+                const content = document.getElementById('savePlanContent');
+
+                content.innerHTML = `
+                    <h3 style="margin: 0 0 15px 0;">Add Drone</h3>
+                    <div class="input-group">
+                        <label>Drone Model</label>
+                        <input type="text" id="droneNameInput" placeholder="e.g., DJI Mavic 3">
+                    </div>
+                    <div class="input-group">
+                        <label>Weight (lbs)</label>
+                        <input type="number" id="droneWeightInput" step="0.1" placeholder="e.g., 1.98">
+                    </div>
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" id="droneParachuteCheckbox">
+                            Has Parachute System
+                        </label>
+                    </div>
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" id="droneRemoteIDCheckbox">
+                            Has Remote ID
+                        </label>
+                    </div>
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" id="droneNightLightsCheckbox">
+                            Has Night Lights
+                        </label>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 15px;">
+                        <button class="btn" id="confirmAddDrone">Add Drone</button>
+                        <button class="btn btn-secondary" id="cancelAddDrone">Cancel</button>
+                    </div>
+                `;
+
+                modal.classList.add('active');
+
+                document.getElementById('confirmAddDrone').addEventListener('click', () => {
+                    const name = document.getElementById('droneNameInput').value;
+                    const weight = parseFloat(document.getElementById('droneWeightInput').value);
+
+                    if (name && weight) {
+                        const drone = {
+                            id: `drone_${Date.now()}`,
+                            name,
+                            weight_lbs: weight,
+                            hasParachute: document.getElementById('droneParachuteCheckbox').checked,
+                            hasRemoteID: document.getElementById('droneRemoteIDCheckbox').checked,
+                            hasNightLights: document.getElementById('droneNightLightsCheckbox').checked
+                        };
+
+                        state.userProfile.drones.push(drone);
+                        modal.classList.remove('active');
+                        render();
+                    } else {
+                        alert('Please fill in drone name and weight');
+                    }
+                });
+
+                document.getElementById('cancelAddDrone').addEventListener('click', () => {
+                    modal.classList.remove('active');
+                });
             }
 
             // Initial render
