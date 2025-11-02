@@ -1583,140 +1583,37 @@
                     // CRITICAL: Wait longer for tab transition and DOM layout to complete
                     await new Promise(resolve => setTimeout(resolve, 300));
 
-                    // Get map container
-                    const mapContainer = document.getElementById('mapContainer');
-                    if (!mapContainer) {
-                        state.syncMessage = { type: 'error', text: 'Map container not found' };
-                        render();
-                        return;
-                    }
+                    // SIMPLIFIED APPROACH: Use the working initMap pattern
+                    const firstPoint = details.telemetry.track[0];
+                    console.log('Flight path first point:', firstPoint);
 
-                    // CRITICAL: Completely clean up old map and container
+                    // Clean up old map if exists
                     if (state.map) {
-                        try {
-                            state.map.remove();
-                            console.log('Old map removed');
-                        } catch (e) {
-                            console.warn('Error removing old map:', e);
-                        }
+                        state.map.remove();
                         state.map = null;
                     }
 
-                    // CRITICAL: Clear container innerHTML to remove any Leaflet remnants
-                    mapContainer.innerHTML = '';
-                    console.log('Map container cleared');
+                    // Wait a bit longer to ensure tab is fully visible
+                    await new Promise(resolve => setTimeout(resolve, 500));
 
-                    const firstPoint = details.telemetry.track[0];
-                    console.log('Creating new map centered at:', firstPoint.lat, firstPoint.lon);
-
-                    // Ensure container has explicit dimensions
-                    mapContainer.style.height = '400px';
-                    mapContainer.style.width = '100%';
-                    mapContainer.style.position = 'relative';
-                    mapContainer.style.display = 'block';
-                    mapContainer.style.backgroundColor = '#e0e0e0'; // Gray background to see if container is visible
-
-                    // Force a reflow to ensure dimensions are applied
-                    const forceReflow = mapContainer.offsetHeight;
-
-                    const diagnostics = {
-                        height: mapContainer.offsetHeight,
-                        width: mapContainer.offsetWidth,
-                        visible: mapContainer.offsetParent !== null,
-                        computedHeight: getComputedStyle(mapContainer).height,
-                        computedWidth: getComputedStyle(mapContainer).width,
-                        parentElement: mapContainer.parentElement?.tagName,
-                        leafletVersion: L.version,
-                        timestamp: new Date().toISOString()
-                    };
-                    console.log('Map container dimensions:', diagnostics);
-
-                    // Store diagnostics for later display
-                    window.mapDiagnostics = diagnostics;
-
-                    // CRITICAL: Check if container has valid dimensions
-                    if (mapContainer.offsetHeight === 0 || mapContainer.offsetWidth === 0) {
-                        throw new Error(`Map container has zero dimensions: ${mapContainer.offsetWidth}x${mapContainer.offsetHeight}`);
+                    // Initialize map using the SAME approach that works for spots
+                    const mapContainer = document.getElementById('mapContainer');
+                    if (!mapContainer) {
+                        console.error('Map container not found!');
+                        return;
                     }
 
-                    // Create map with explicit preferCanvas option
-                    state.map = L.map(mapContainer, {
-                        preferCanvas: false,
-                        zoomControl: true,
-                        attributionControl: true
-                    }).setView([firstPoint.lat, firstPoint.lon], 15);
-                    console.log('Map instance created');
+                    console.log('Container dimensions:', mapContainer.offsetWidth, 'x', mapContainer.offsetHeight);
 
-                    // CRITICAL: Force immediate size calculation
-                    state.map.invalidateSize(true);
+                    // Create map - SIMPLE approach without extra options
+                    state.map = L.map('mapContainer').setView([firstPoint.lat, firstPoint.lon], 15);
 
-                    // Add tile layer with comprehensive error handling
-                    const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-                        maxZoom: 19,
-                        minZoom: 1
-                        // REMOVED crossOrigin - it was causing tiles to show as "undefined"
-                    });
+                    // Add OpenStreetMap tiles - SIMPLE approach
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                    }).addTo(state.map);
 
-                    // Debug tile loading
-                    let tilesLoaded = 0;
-                    let tilesFailed = 0;
-                    const tileUrls = new Set();
-
-                    tileLayer.on('tileloadstart', (e) => {
-                        tileUrls.add(e.url);
-                        console.log('Tile load started:', e.url);
-                    });
-
-                    tileLayer.on('tileload', (e) => {
-                        tilesLoaded++;
-                        console.log('✓ Tile loaded:', tilesLoaded, 'URL:', e.url);
-                    });
-
-                    tileLayer.on('tileerror', (e) => {
-                        tilesFailed++;
-                        console.error('✗ Tile ERROR:', tilesFailed, 'URL:', e.url);
-                        if (e.error) console.error('Error details:', e.error);
-                    });
-
-                    tileLayer.on('load', () => {
-                        console.log('✓ All tiles loaded. Success:', tilesLoaded, 'Failed:', tilesFailed);
-                    });
-
-                    tileLayer.addTo(state.map);
-                    console.log('Tile layer added to map');
-
-                    // Wait for tiles to load
-                    await new Promise(resolve => setTimeout(resolve, 100));
-
-                    // Force another size invalidation after tiles start loading
-                    state.map.invalidateSize(true);
-                    console.log('Map size invalidated after tile layer added');
-
-                    // Store final diagnostics after map creation
-                    window.mapDiagnostics.mapCreated = true;
-                    window.mapDiagnostics.mapCenter = state.map.getCenter();
-                    window.mapDiagnostics.mapZoom = state.map.getZoom();
-                    window.mapDiagnostics.mapSize = state.map.getSize();
-                    window.mapDiagnostics.layerCount = Object.keys(state.map._layers).length;
-                    window.mapDiagnostics.tileLayerAdded = true;
-
-                    // After 2 seconds, capture tile loading status
-                    setTimeout(() => {
-                        window.mapDiagnostics.tilesLoaded = tilesLoaded;
-                        window.mapDiagnostics.tilesFailed = tilesFailed;
-                        window.mapDiagnostics.tilesRequested = tileUrls.size;
-                        console.log('=== FINAL MAP DIAGNOSTICS ===');
-                        console.log(JSON.stringify(window.mapDiagnostics, null, 2));
-                        console.log('=== END DIAGNOSTICS ===');
-
-                        // Display diagnostic banner if tiles didn't load
-                        if (tilesLoaded === 0 && tileUrls.size > 0) {
-                            alert('⚠️ MAP TILES NOT LOADING\n\nTiles requested: ' + tileUrls.size + '\nTiles loaded: 0\n\nCheck console for diagnostics or press Cmd+Option+J');
-                        } else if (tileUrls.size === 0) {
-                            alert('⚠️ NO TILES REQUESTED\n\nLeaflet is not requesting tiles!\n\nMap size: ' + window.mapDiagnostics.mapSize.x + 'x' + window.mapDiagnostics.mapSize.y + '\n\nCheck console for diagnostics');
-                        }
-                    }, 2000);
+                    console.log('Map created at:', state.map.getCenter(), 'zoom:', state.map.getZoom());
 
                     console.log('Map created, drawing flight path with', details.telemetry.pointCount, 'points');
 
