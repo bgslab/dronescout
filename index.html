@@ -1584,8 +1584,14 @@
                     await new Promise(resolve => setTimeout(resolve, 300));
 
                     // SIMPLIFIED APPROACH: Use the working initMap pattern
-                    const firstPoint = details.telemetry.track[0];
-                    console.log('Flight path first point:', firstPoint);
+                    // Skip first point if it's 0,0 (bad data) - use a valid point instead
+                    let firstPoint = details.telemetry.track[0];
+                    if (firstPoint.lat === 0 && firstPoint.lon === 0) {
+                        // Find first valid point
+                        firstPoint = details.telemetry.track.find(p => p.lat !== 0 && p.lon !== 0) || details.telemetry.track[details.telemetry.track.length - 1];
+                        console.log('First point was 0,0 - using valid point instead:', firstPoint);
+                    }
+                    console.log('Flight path center point:', firstPoint);
 
                     // Clean up old map if exists
                     if (state.map) {
