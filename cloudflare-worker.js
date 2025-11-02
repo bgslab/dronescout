@@ -308,23 +308,51 @@ async function handleFlightDetails(flightId, apiToken) {
 
       allFields.forEach(fieldName => {
         if (telem[fieldName]?.data) {
-          const values = telemetryTrack
-            .map(p => p[fieldName])
-            .filter(v => v != null && !isNaN(v));
+          // Special handling for velocity - might be array [vx, vy] or [vx, vy, vz]
+          if (fieldName === 'velocity' && Array.isArray(telem[fieldName].data[0])) {
+            console.log('Velocity is array format, calculating magnitude');
+            const velocityMagnitudes = telemetryTrack.map(p => {
+              const vel = p[fieldName];
+              if (Array.isArray(vel)) {
+                // Calculate magnitude: sqrt(vx² + vy² + vz²)
+                return Math.sqrt(vel.reduce((sum, v) => sum + v * v, 0));
+              }
+              return vel;
+            }).filter(v => v != null && !isNaN(v));
 
-          if (values.length > 0) {
-            const nonZeroValues = values.filter(v => v !== 0);
+            if (velocityMagnitudes.length > 0) {
+              const nonZeroVels = velocityMagnitudes.filter(v => v !== 0);
+              telemetryStats[fieldName] = {
+                min: Math.min(...velocityMagnitudes),
+                max: Math.max(...velocityMagnitudes),
+                avg: velocityMagnitudes.reduce((a, b) => a + b, 0) / velocityMagnitudes.length,
+                start: velocityMagnitudes[0],
+                end: velocityMagnitudes[velocityMagnitudes.length - 1],
+                change: velocityMagnitudes[0] - velocityMagnitudes[velocityMagnitudes.length - 1],
+                count: velocityMagnitudes.length,
+                hasNonZero: nonZeroVels.length > 0,
+              };
+            }
+          } else {
+            // Regular scalar field
+            const values = telemetryTrack
+              .map(p => p[fieldName])
+              .filter(v => v != null && !isNaN(v));
 
-            telemetryStats[fieldName] = {
-              min: Math.min(...values),
-              max: Math.max(...values),
-              avg: values.reduce((a, b) => a + b, 0) / values.length,
-              start: values[0],
-              end: values[values.length - 1],
-              change: values[0] - values[values.length - 1],
-              count: values.length,
-              hasNonZero: nonZeroValues.length > 0,
-            };
+            if (values.length > 0) {
+              const nonZeroValues = values.filter(v => v !== 0);
+
+              telemetryStats[fieldName] = {
+                min: Math.min(...values),
+                max: Math.max(...values),
+                avg: values.reduce((a, b) => a + b, 0) / values.length,
+                start: values[0],
+                end: values[values.length - 1],
+                change: values[0] - values[values.length - 1],
+                count: values.length,
+                hasNonZero: nonZeroValues.length > 0,
+              };
+            }
           }
         }
       });
