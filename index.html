@@ -1824,7 +1824,8 @@
 
                 // If no specific parts, at least include context
                 if (context.length > 0) {
-                    desc = context[0].charAt(0).toUpperCase() + context.slice(0).join(', ');
+                    const firstContext = context[0].charAt(0).toUpperCase() + context[0].slice(1);
+                    desc = context.length > 1 ? firstContext + ', ' + context.slice(1).join(', ') : firstContext;
                     desc += '. ' + getGenericDroneAdvice(tags, spotType);
                     return desc;
                 }
