@@ -1625,7 +1625,7 @@
                     spots.push({
                         id: element.id || Date.now() + index,
                         name: name,
-                        description: generateDescription(tags, spotType),
+                        description: generateDescription(tags, spotType, locationName),
                         coordinates: { lat: poiLat, lng: poiLng },
                         imageUrl: imageData.imageUrl,
                         imageSource: imageData.source, // 'streetview' or 'unsplash'
@@ -1738,7 +1738,7 @@
             }
 
             // Generate description based on tags
-            function generateDescription(tags, spotType) {
+            function generateDescription(tags, spotType, locationName = '') {
                 // Use real OSM description if available
                 if (tags.description) {
                     return tags.description;
@@ -1747,6 +1747,11 @@
                 // Build description from available OSM tags
                 let parts = [];
                 let context = [];
+
+                // Add location context early if we have it and no city tag
+                if (locationName && !tags['addr:city']) {
+                    context.push(`near ${locationName}`);
+                }
 
                 // Primary feature description with more detail
                 if (tags.natural === 'peak') {
