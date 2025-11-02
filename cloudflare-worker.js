@@ -1179,60 +1179,32 @@ async function handleFoursquareDiscover(lat, lon, radiusMeters, apiKey) {
   try {
     console.log(`📍 Foursquare discovery: ${radiusMeters}m radius from [${lat}, ${lon}]`);
 
-    // Foursquare category codes for ALL types of drone-worthy locations
-    const CATEGORIES = {
-      landmarks: '16000',      // Landmarks & Outdoors
-      parks: '16032',          // Parks
-      beaches: '16003',        // Beaches
-      viewpoints: '16045',     // Scenic Lookouts
-      historic: '12080',       // Historic Sites
-      monuments: '12009',      // Monuments
-      arts: '12000',           // Arts & Entertainment
-      architecture: '12007',   // Architectural Buildings
-      stadiums: '18021',       // Stadiums
-      universities: '14012',   // Universities/Campuses
-      bridges: '16007',        // Bridges
-      harbors: '16011',        // Harbors/Marinas
-      gardens: '16020'         // Gardens
-    };
+    // TODO: Update to new Foursquare category IDs when documented
+    // For now, do a broad search to get diverse results
+    const searchUrl = `${FOURSQUARE_API_BASE}/places/search?` +
+      `ll=${lat},${lon}&radius=${radiusMeters}&limit=50&sort=POPULARITY`;
 
-    const allPlaces = [];
+    console.log(`🔍 Fetching places from Foursquare...`);
 
-    // Search multiple categories in parallel
-    const categoryKeys = Object.keys(CATEGORIES).slice(0, 8); // Limit API calls
-    const searchPromises = categoryKeys.map(async (key) => {
-      const categoryId = CATEGORIES[key];
-      const searchUrl = `${FOURSQUARE_API_BASE}/places/search?` +
-        `ll=${lat},${lon}&radius=${radiusMeters}&categories=${categoryId}&limit=20&sort=POPULARITY`;
-
-      try {
-        const response = await fetch(searchUrl, {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'X-Places-Api-Version': '2025-06-17',
-            'Accept': 'application/json'
-          }
-        });
-
-        if (!response.ok) {
-          console.log(`  ⚠️ Category "${key}": HTTP ${response.status}`);
-          return [];
-        }
-
-        const data = await response.json();
-        if (data.results && data.results.length > 0) {
-          console.log(`  ✅ Category "${key}": ${data.results.length} places`);
-          return data.results;
-        }
-        return [];
-      } catch (error) {
-        console.error(`  ❌ Category "${key}": ${error.message}`);
-        return [];
+    const response = await fetch(searchUrl, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'X-Places-Api-Version': '2025-06-17',
+        'Accept': 'application/json'
       }
     });
 
-    const categoryResults = await Promise.all(searchPromises);
-    categoryResults.forEach(results => allPlaces.push(...results));
+    if (!response.ok) {
+      console.error(`❌ Foursquare API error: HTTP ${response.status}`);
+      return jsonResponse({
+        success: false,
+        error: `Foursquare API error: ${response.status}`,
+        results: []
+      }, response.status);
+    }
+
+    const data = await response.json();
+    const allPlaces = data.results || [];
 
     if (allPlaces.length === 0) {
       return jsonResponse({
