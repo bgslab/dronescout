@@ -1635,7 +1635,7 @@
 
                     // Determine spot type and generate appropriate data
                     const tags = element.tags || {};
-                    const spotType = determineSpotType(tags);
+                    const spotType = determineSpotType(tags, locationName, tags);
                     const name = tags.name || `${spotType.name} ${index + 1}`;
 
                     // Debug: Log OSM tags to see what data is available
@@ -1710,27 +1710,47 @@
             }
 
             // Determine spot type from OSM tags
-            function determineSpotType(tags) {
+            function determineSpotType(tags, locationName = '', osmTags = {}) {
+                // Detect if location is urban (major city)
+                const isUrban = locationName && (
+                    /New York|NYC|Manhattan|Brooklyn|Queens|Bronx|Staten Island/i.test(locationName) ||
+                    /Chicago|Los Angeles|LA|San Francisco|SF|Seattle|Boston|Philadelphia|Washington DC|DC|Miami/i.test(locationName) ||
+                    /Houston|Phoenix|Dallas|Austin|Denver|Portland|Atlanta|Detroit/i.test(locationName)
+                );
+
+                // Check OSM tags for urban indicators
+                const hasUrbanTags = osmTags.building || osmTags['building:levels'] ||
+                                    osmTags.highway || osmTags.amenity === 'restaurant' ||
+                                    osmTags.shop || osmTags.office;
+
+                const isCity = isUrban || hasUrbanTags;
+
                 if (tags.tourism === 'viewpoint' || tags.natural === 'peak') {
                     return {
                         category: 'viewpoint',
                         name: 'Viewpoint',
                         bestTime: 'Golden hour (sunrise/sunset)',
-                        shotTypes: { landscape: 80, nature: 20, cityscape: 0, architecture: 0 }
+                        shotTypes: isCity
+                            ? { cityscape: 70, architecture: 20, landscape: 10, nature: 0 }
+                            : { landscape: 80, nature: 20, cityscape: 0, architecture: 0 }
                     };
                 } else if (tags.natural === 'water' || tags.natural === 'beach') {
                     return {
                         category: 'water',
                         name: 'Water Feature',
                         bestTime: 'Early morning for calm water',
-                        shotTypes: { nature: 60, landscape: 40, cityscape: 0, architecture: 0 }
+                        shotTypes: isCity
+                            ? { cityscape: 40, architecture: 20, landscape: 20, nature: 20 }
+                            : { nature: 60, landscape: 40, cityscape: 0, architecture: 0 }
                     };
                 } else if (tags.leisure === 'park') {
                     return {
                         category: 'park',
                         name: 'Park',
                         bestTime: 'Golden hour',
-                        shotTypes: { nature: 50, landscape: 30, cityscape: 20, architecture: 0 }
+                        shotTypes: isCity
+                            ? { cityscape: 40, nature: 30, architecture: 20, landscape: 10 }
+                            : { nature: 50, landscape: 30, cityscape: 20, architecture: 0 }
                     };
                 } else if (tags.leisure === 'nature_reserve' || tags.landuse === 'forest') {
                     return {
@@ -1751,7 +1771,9 @@
                         category: 'landscape',
                         name: 'Scenic Spot',
                         bestTime: 'Golden hour',
-                        shotTypes: { landscape: 50, nature: 30, cityscape: 10, architecture: 10 }
+                        shotTypes: isCity
+                            ? { cityscape: 40, architecture: 30, landscape: 20, nature: 10 }
+                            : { landscape: 50, nature: 30, cityscape: 10, architecture: 10 }
                     };
                 }
             }
