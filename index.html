@@ -1731,6 +1731,12 @@
                 }
             }
 
+            // Helper: Convert meters to feet
+            function metersToFeet(meters) {
+                const feet = Math.round(meters * 3.28084);
+                return feet.toLocaleString(); // Add comma separators for large numbers
+            }
+
             // Generate description based on tags
             function generateDescription(tags, spotType) {
                 // Use real OSM description if available
@@ -1744,7 +1750,7 @@
 
                 // Primary feature description with more detail
                 if (tags.natural === 'peak') {
-                    parts.push(tags.ele ? `Mountain peak at ${tags.ele}m elevation` : 'Mountain peak');
+                    parts.push(tags.ele ? `Mountain peak at ${metersToFeet(tags.ele)} ft elevation` : 'Mountain peak');
                 } else if (tags.natural === 'beach') {
                     parts.push('Beach area');
                     if (tags.surface) parts.push(`${tags.surface} surface`);
@@ -1758,7 +1764,7 @@
                     } else {
                         parts.push('Scenic viewpoint');
                     }
-                    if (tags.ele) parts.push(`at ${tags.ele}m elevation`);
+                    if (tags.ele) parts.push(`at ${metersToFeet(tags.ele)} ft elevation`);
                     if (tags.direction) parts.push(`facing ${tags.direction}`);
                 } else if (tags.leisure === 'park') {
                     if (tags['park:type']) {
