@@ -1260,31 +1260,44 @@
             // Fetch real images from Unsplash API (location-specific)
             async function fetchUnsplashImage(category, locationName = '', spotName = '') {
                 try {
-                    // Extract city/location name from full location (e.g., "San Francisco" from "San Francisco, CA, USA")
-                    let cityName = locationName;
+                    // Build specific search query from location name
+                    // For "South Main Street, Crystal Lake, McHenry County, Illinois"
+                    // Extract: "South Main Street Crystal Lake Illinois"
+                    let searchLocation = locationName;
+
                     if (locationName.includes(',')) {
-                        cityName = locationName.split(',')[0].trim();
+                        const parts = locationName.split(',').map(p => p.trim());
+                        // Use first part (street/place) + second part (city) + last part (state)
+                        // Skip middle parts like "McHenry County"
+                        if (parts.length >= 3) {
+                            searchLocation = `${parts[0]} ${parts[1]} ${parts[parts.length - 1]}`;
+                        } else if (parts.length === 2) {
+                            searchLocation = `${parts[0]} ${parts[1]}`;
+                        } else {
+                            searchLocation = parts[0];
+                        }
                     }
 
                     // Map categories to search terms
                     const categoryTerms = {
-                        viewpoint: 'cityscape skyline',
-                        water: 'waterfront bay harbor',
-                        park: 'park nature',
-                        nature: 'nature landscape',
-                        architecture: 'architecture landmark',
-                        landscape: 'landscape vista'
+                        viewpoint: 'aerial view',
+                        water: 'waterfront',
+                        park: 'park',
+                        nature: 'nature',
+                        architecture: 'architecture',
+                        landmark: 'downtown',
+                        landscape: 'aerial'
                     };
 
-                    const categoryTerm = categoryTerms[category] || categoryTerms.landscape;
+                    const categoryTerm = categoryTerms[category] || 'aerial';
 
                     // Combine location + category for location-specific images
-                    // e.g., "San Francisco cityscape" or "Yosemite mountain landscape"
-                    const query = cityName ? `${cityName} ${categoryTerm}` : categoryTerm;
+                    // e.g., "South Main Street Crystal Lake Illinois downtown"
+                    const query = searchLocation ? `${searchLocation} ${categoryTerm}` : categoryTerm;
 
                     const url = `https://api.unsplash.com/photos/random?query=${encodeURIComponent(query)}&orientation=landscape`;
 
-                    console.log(`Fetching image for: "${query}"`);
+                    console.log(`🔍 Unsplash search: "${query}"`);
 
                     const response = await fetch(url, {
                         headers: {
@@ -1991,9 +2004,12 @@
                     console.log(`📍 Spot: ${name}`, 'OSM Tags:', tags);
 
                     // V10.0: Fetch image, weather, and obstacles in parallel
-                    // Use real location name for better image search
+                    // Use full location context for accurate image search
+                    const imageSearchQuery = realLocationName || `${name}, ${locationName}`;
+                    console.log(`🖼️ Image search query: "${imageSearchQuery}"`);
+
                     const [imageData, weatherData, obstacleData] = await Promise.all([
-                        fetchLocationImage(poiLat, poiLng, spotType.category, name),
+                        fetchLocationImage(poiLat, poiLng, spotType.category, imageSearchQuery),
                         fetchCurrentWeather(poiLat, poiLng, 'imperial'),
                         detectObstacles(poiLat, poiLng, 500).catch(() => ({ count: 0, types: [], risk: 'low' }))
                     ]);
