@@ -2387,13 +2387,14 @@
                                         ${flight.notes ? `<p><strong>Notes:</strong> ${flight.notes}</p>` : ''}
                                     </div>
 
-                                    <!-- Telemetry Stats (for synced flights with telemetry) -->
-                                    ${flight.synced && flight.telemetry?.stats ? `
-                                        <details style="margin-top: 12px;" class="telemetry-details">
+                                    <!-- Telemetry Stats (for synced flights) -->
+                                    ${flight.synced ? `
+                                        <details style="margin-top: 12px;" class="telemetry-details" data-flight-id="${flight.id}">
                                             <summary style="cursor: pointer; padding: 8px 12px; background: #f0f4f8; border-radius: 6px; font-weight: 600; color: #1e3c72; user-select: none;">
-                                                📊 Flight Telemetry
+                                                📊 Flight Telemetry ${flight.telemetry?.stats ? '' : '(Click to load)'}
                                             </summary>
                                             <div style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-top: 8px;">
+                                                ${flight.telemetry?.stats ? `
                                                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 13px;">
                                                     ${flight.telemetry.stats.maxSpeed != null ? `
                                                         <div>
@@ -2438,6 +2439,16 @@
                                                         </div>
                                                     ` : ''}
                                                 </div>
+                                                ` : `
+                                                <div style="text-align: center; padding: 20px; color: #666;">
+                                                    <div class="telemetry-loading-${flight.id}" style="display: none;">
+                                                        <span class="spinner"></span> Loading telemetry data...
+                                                    </div>
+                                                    <div class="telemetry-placeholder-${flight.id}">
+                                                        Click "View Flight Path" to load telemetry stats
+                                                    </div>
+                                                </div>
+                                                `}
                                             </div>
                                         </details>
                                     ` : ''}
