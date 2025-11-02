@@ -2912,9 +2912,14 @@
                             </div>
                         </div>
 
-                        <button class="btn" id="syncNowBtn" ${state.syncSettings.connectionStatus === 'checking' ? 'disabled' : ''}>
-                            ${state.syncSettings.connectionStatus === 'checking' ? '<span class="spinner"></span> Syncing...' : '☁️ Sync Flights'}
-                        </button>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn" id="syncNowBtn" ${state.syncSettings.connectionStatus === 'checking' ? 'disabled' : ''}>
+                                ${state.syncSettings.connectionStatus === 'checking' ? '<span class="spinner"></span> Syncing...' : '☁️ Sync Flights'}
+                            </button>
+                            <button class="btn" id="clearAndResyncBtn" style="background: #e74c3c;" ${state.syncSettings.connectionStatus === 'checking' ? 'disabled' : ''}>
+                                🗑️ Clear & Re-sync
+                            </button>
+                        </div>
                     </div>
 
                     ${state.flights.length > 0 ? `
@@ -3465,6 +3470,34 @@
                     syncNowBtn.addEventListener('click', syncFlights);
                 }
 
+                // Clear & Re-sync button
+                const clearAndResyncBtn = document.getElementById('clearAndResyncBtn');
+                if (clearAndResyncBtn) {
+                    clearAndResyncBtn.addEventListener('click', async () => {
+                        if (confirm('This will clear all flight data and ratings from local storage and re-sync from Skydio. Continue?')) {
+                            // Clear flight data and ratings
+                            state.flights = [];
+                            state.ratings = [];
+                            saveToStorage('flights', state.flights);
+                            saveToStorage('ratings', state.ratings);
+
+                            // Clear inline maps
+                            if (state.inlineMaps) {
+                                Object.values(state.inlineMaps).forEach(map => {
+                                    if (map && map.remove) map.remove();
+                                });
+                                state.inlineMaps = {};
+                            }
+
+                            state.syncMessage = { type: 'info', text: 'Cleared local data. Re-syncing...' };
+                            render();
+
+                            // Re-sync from Skydio
+                            await syncFlights();
+                        }
+                    });
+                }
+
                 // Settings buttons
                 const syncSettingsBtn = document.getElementById('syncSettingsBtn');
                 if (syncSettingsBtn) {
@@ -3675,9 +3708,12 @@
                     notes: ''
                 };
 
+                // Use the full generated flight name with location
+                const flightName = generateFlightName(flight);
+
                 content.innerHTML = `
                     <div style="margin-bottom: 20px;">
-                        <strong>Location:</strong> ${flight.name || flight.location}
+                        <strong>Flight:</strong> ${flightName}
                     </div>
 
                     <div style="margin-bottom: 20px;">
