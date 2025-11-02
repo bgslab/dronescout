@@ -1641,7 +1641,8 @@
                         radiusKm = state.userProfile.preferences.searchRadius_mi * 1.60934; // Convert miles to km
                     }
 
-                    // V10.0: Enhanced query with access/ownership tags
+                    // V10.0: Enhanced query with broader location types
+                    console.log(`🔍 Searching ${radiusKm}km radius (${(radiusKm * 0.621371).toFixed(1)} mi) from [${lat.toFixed(4)}, ${lng.toFixed(4)}]`);
                     const query = `
                         [out:json][timeout:25];
                         (
@@ -1649,15 +1650,26 @@
                           node["natural"="peak"](around:${radiusKm * 1000},${lat},${lng});
                           way["leisure"="park"](around:${radiusKm * 1000},${lat},${lng});
                           way["natural"="water"](around:${radiusKm * 1000},${lat},${lng});
+                          relation["natural"="water"](around:${radiusKm * 1000},${lat},${lng});
                           way["leisure"="nature_reserve"](around:${radiusKm * 1000},${lat},${lng});
                           node["natural"="beach"](around:${radiusKm * 1000},${lat},${lng});
+                          way["leisure"="beach_resort"](around:${radiusKm * 1000},${lat},${lng});
                           way["landuse"="forest"](around:${radiusKm * 1000},${lat},${lng});
                           node["man_made"="tower"]["tower:type"="observation"](around:${radiusKm * 1000},${lat},${lng});
-                          way["tourism"="attraction"]["building"](around:${radiusKm * 1000},${lat},${lng});
+                          way["tourism"="attraction"](around:${radiusKm * 1000},${lat},${lng});
+                          node["tourism"="attraction"](around:${radiusKm * 1000},${lat},${lng});
                           way["building"="commercial"]["building:levels"](around:${radiusKm * 1000},${lat},${lng});
                           node["historic"="monument"](around:${radiusKm * 1000},${lat},${lng});
                           way["amenity"="place_of_worship"](around:${radiusKm * 1000},${lat},${lng});
                           way["leisure"="stadium"](around:${radiusKm * 1000},${lat},${lng});
+                          node["leisure"="marina"](around:${radiusKm * 1000},${lat},${lng});
+                          way["leisure"="marina"](around:${radiusKm * 1000},${lat},${lng});
+                          node["amenity"="boat_ramp"](around:${radiusKm * 1000},${lat},${lng});
+                          way["waterway"="river"](around:${radiusKm * 1000},${lat},${lng});
+                          way["waterway"="canal"](around:${radiusKm * 1000},${lat},${lng});
+                          node["natural"="coastline"](around:${radiusKm * 1000},${lat},${lng});
+                          way["leisure"="garden"](around:${radiusKm * 1000},${lat},${lng});
+                          way["leisure"="common"](around:${radiusKm * 1000},${lat},${lng});
                         );
                         out center tags 40;
                     `;
@@ -2126,6 +2138,43 @@
                         name: 'Stadium',
                         bestTime: 'Event days or blue hour',
                         shotTypes: { architecture: 50, cityscape: 40, landscape: 10, nature: 0 }
+                    };
+                } else if (tags.leisure === 'marina' || tags.amenity === 'boat_ramp') {
+                    return {
+                        category: 'water',
+                        name: tags.leisure === 'marina' ? 'Marina' : 'Boat Launch',
+                        bestTime: 'Early morning or golden hour',
+                        shotTypes: { nature: 50, landscape: 30, cityscape: 20, architecture: 0 }
+                    };
+                } else if (tags.waterway === 'river' || tags.waterway === 'canal') {
+                    return {
+                        category: 'water',
+                        name: tags.waterway === 'river' ? 'River' : 'Canal',
+                        bestTime: 'Golden hour',
+                        shotTypes: { nature: 60, landscape: 40, cityscape: 0, architecture: 0 }
+                    };
+                } else if (tags.leisure === 'garden' || tags.leisure === 'common') {
+                    return {
+                        category: 'nature',
+                        name: tags.leisure === 'garden' ? 'Garden' : 'Common',
+                        bestTime: 'Golden hour',
+                        shotTypes: { nature: 60, landscape: 30, cityscape: 10, architecture: 0 }
+                    };
+                } else if (tags.leisure === 'beach_resort') {
+                    return {
+                        category: 'water',
+                        name: 'Beach Resort',
+                        bestTime: 'Golden hour',
+                        shotTypes: { nature: 50, landscape: 40, cityscape: 10, architecture: 0 }
+                    };
+                } else if (tags.tourism === 'attraction') {
+                    return {
+                        category: 'landmark',
+                        name: 'Tourist Attraction',
+                        bestTime: 'Golden hour',
+                        shotTypes: isCity
+                            ? { cityscape: 50, architecture: 30, landscape: 20, nature: 0 }
+                            : { landscape: 50, nature: 30, cityscape: 20, architecture: 0 }
                     };
                 } else {
                     return {
@@ -4689,25 +4738,28 @@
                                     if (pois && pois.length > 0) {
                                         // Success: Use real POI data
                                         state.spots = pois;
-                                        console.log(`Found ${pois.length} real locations near ${location.displayName}`);
+                                        console.log(`✅ Found ${pois.length} real locations near ${location.displayName}`);
                                     } else {
-                                        // Fallback: No POIs found, use hardcoded spots
-                                        console.log('No POIs found, using fallback spots');
-                                        state.spots = scenicSpots;
+                                        // No POIs found - show empty state
+                                        console.warn('⚠️ No drone spots found in this area');
+                                        state.spots = [];
+                                        alert(`No drone spots found near ${location.displayName}. Try:\n• Increasing search radius in Settings\n• Searching a different location\n• Looking for nearby parks or lakes`);
                                     }
                                 } else {
-                                    // Fallback: Geocoding failed, use hardcoded spots
-                                    console.log('Geocoding failed, using fallback spots');
+                                    // Geocoding failed - show error
+                                    console.error('❌ Geocoding failed for:', state.destination);
                                     state.destinationCoords = null;
                                     state.searchCenter = null;
-                                    state.spots = scenicSpots;
+                                    state.spots = [];
+                                    alert(`Could not find location: "${state.destination}". Please try a different search.`);
                                 }
                             } catch (error) {
-                                // Fallback: Error occurred, use hardcoded spots
-                                console.error('Location search error:', error);
+                                // Error occurred - show error
+                                console.error('❌ Location search error:', error);
                                 state.destinationCoords = null;
                                 state.searchCenter = null;
-                                state.spots = scenicSpots;
+                                state.spots = [];
+                                alert('Search error. Please check your connection and try again.');
                             } finally {
                                 // Restore button and loading state
                                 state.loadingSpots = false;
