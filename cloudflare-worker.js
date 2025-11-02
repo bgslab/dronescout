@@ -7,6 +7,7 @@ const SKYDIO_API_BASE = 'https://api.skydio.com';
 const GOOGLE_STREETVIEW_BASE = 'https://maps.googleapis.com/maps/api/streetview';
 const GOOGLE_PLACES_BASE = 'https://maps.googleapis.com/maps/api/place';
 const OPENWEATHER_API_BASE = 'https://api.openweathermap.org/data/2.5';
+const FLICKR_API_BASE = 'https://www.flickr.com/services/rest';
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -87,7 +88,20 @@ export default {
         return await handleCurrentWeather(lat, lon, units, env.OPENWEATHER_API_KEY);
       }
 
-      // Route requests - Google Places API
+      // V10.1: Flickr Photo Hotspot Discovery (PRIMARY METHOD)
+      // Find drone photo spots based on where photographers actually shoot
+      if (path === '/api/flickr/photospots' && request.method === 'GET') {
+        const lat = url.searchParams.get('lat');
+        const lon = url.searchParams.get('lon');
+        const radius = url.searchParams.get('radius') || '10'; // km
+
+        if (!lat || !lon) {
+          return jsonResponse({ error: 'Missing lat or lon parameter' }, 400);
+        }
+        return await handleFlickrPhotoHotspots(lat, lon, radius, env.FLICKR_API_KEY);
+      }
+
+      // Route requests - Google Places API (FALLBACK ONLY)
       // V10.0: Comprehensive POI search for drone spots
       if (path === '/api/places/nearbysearch' && request.method === 'GET') {
         const lat = url.searchParams.get('lat');
@@ -1146,6 +1160,247 @@ async function handlePlaceDetails(placeId, apiKey) {
  */
 function getPlacePhotoUrl(photoReference, maxWidth, apiKey) {
   return `${GOOGLE_PLACES_BASE}/photo?maxwidth=${maxWidth}&photo_reference=${photoReference}&key=${apiKey}`;
+}
+
+/**
+ * V10.1: Flickr Photo Hotspot Discovery
+ * Find drone photography spots based on where photographers actually shoot
+ * This is THE RIGHT APPROACH - photos define locations, not places defining photos
+ */
+async function handleFlickrPhotoHotspots(lat, lon, radiusKm, apiKey) {
+  if (!apiKey) {
+    return jsonResponse({
+      success: false,
+      error: 'Flickr API key not configured',
+      results: []
+    }, 500);
+  }
+
+  try {
+    console.log(`📸 Flickr photo hotspot discovery: ${radiusKm}km radius from [${lat}, ${lon}]`);
+
+    // Search for geotagged photos with drone/aerial/landscape tags
+    const searchTags = [
+      'aerial', 'drone', 'dji', 'landscape', 'cityscape',
+      'sunset', 'sunrise', 'view', 'scenic', 'panorama'
+    ];
+
+    const allPhotos = [];
+
+    // Search for each tag to get diverse results
+    for (const tag of searchTags.slice(0, 5)) { // Limit API calls
+      const photoSearchUrl =
+        `${FLICKR_API_BASE}?method=flickr.photos.search&` +
+        `api_key=${apiKey}&` +
+        `lat=${lat}&lon=${lon}&radius=${radiusKm}&` +
+        `tags=${tag}&` +
+        `tag_mode=any&` +
+        `has_geo=1&` + // Must have GPS coordinates
+        `extras=geo,tags,views,url_m,url_l,description&` +
+        `per_page=50&` +
+        `sort=interestingness-desc&` + // Most interesting/popular first
+        `format=json&nojsoncallback=1`;
+
+      const response = await fetch(photoSearchUrl);
+      const data = await response.json();
+
+      if (data.stat === 'ok' && data.photos?.photo) {
+        allPhotos.push(...data.photos.photo);
+        console.log(`  ✅ Tag "${tag}": ${data.photos.photo.length} photos`);
+      }
+    }
+
+    if (allPhotos.length === 0) {
+      return jsonResponse({
+        success: false,
+        error: 'No photos found in this area',
+        results: []
+      });
+    }
+
+    // Cluster photos by location to find "hotspots"
+    const hotspots = clusterPhotosByLocation(allPhotos, 0.01); // ~1km clustering
+
+    // Sort hotspots by photo density and popularity
+    hotspots.sort((a, b) => {
+      const scoreA = a.photos.length * Math.log10(a.totalViews + 10);
+      const scoreB = b.photos.length * Math.log10(b.totalViews + 10);
+      return scoreB - scoreA;
+    });
+
+    // Format results for DroneScout
+    const formattedHotspots = hotspots.slice(0, 20).map(hotspot => {
+      // Determine dominant shot type from tags
+      const allTags = hotspot.photos.flatMap(p => (p.tags || '').split(' '));
+      const shotType = determineShotType(allTags);
+
+      return {
+        id: `flickr_${hotspot.centerLat}_${hotspot.centerLng}`,
+        name: generateHotspotName(hotspot, allTags),
+        lat: hotspot.centerLat,
+        lng: hotspot.centerLng,
+        photoCount: hotspot.photos.length,
+        totalViews: hotspot.totalViews,
+        avgViews: Math.round(hotspot.totalViews / hotspot.photos.length),
+        photos: hotspot.photos.slice(0, 5).map(p => ({
+          url: p.url_m || p.url_l,
+          url_large: p.url_l,
+          title: p.title,
+          views: p.views,
+          owner: p.owner,
+          tags: p.tags
+        })),
+        shotType: shotType,
+        tags: getMostCommonTags(allTags, 10),
+        bestTimeToShoot: determineBestTime(allTags),
+        description: `Popular photography spot with ${hotspot.photos.length} photos from ${hotspot.uniquePhotographers} photographers`
+      };
+    });
+
+    console.log(`📊 Created ${formattedHotspots.length} photo hotspots from ${allPhotos.length} photos`);
+
+    return jsonResponse({
+      success: true,
+      count: formattedHotspots.length,
+      results: formattedHotspots,
+      totalPhotosAnalyzed: allPhotos.length,
+      searchRadius: radiusKm,
+      method: 'flickr_hotspots'
+    });
+
+  } catch (error) {
+    console.error('Flickr hotspot discovery error:', error);
+    return jsonResponse({
+      success: false,
+      error: 'Failed to discover photo hotspots',
+      results: [],
+      details: error.message
+    }, 500);
+  }
+}
+
+/**
+ * Cluster photos by location to find hotspots
+ */
+function clusterPhotosByLocation(photos, threshold = 0.01) {
+  const clusters = [];
+
+  photos.forEach(photo => {
+    if (!photo.latitude || !photo.longitude) return;
+
+    const photoLat = parseFloat(photo.latitude);
+    const photoLng = parseFloat(photo.longitude);
+
+    // Find existing cluster within threshold
+    let found = false;
+    for (const cluster of clusters) {
+      const latDiff = Math.abs(cluster.centerLat - photoLat);
+      const lngDiff = Math.abs(cluster.centerLng - photoLng);
+
+      if (latDiff < threshold && lngDiff < threshold) {
+        cluster.photos.push(photo);
+        cluster.totalViews += parseInt(photo.views || 0);
+        cluster.uniquePhotographers = new Set(
+          [...cluster.uniquePhotographers, photo.owner]
+        ).size;
+
+        // Update center (weighted average)
+        cluster.centerLat = cluster.photos.reduce((sum, p) =>
+          sum + parseFloat(p.latitude), 0) / cluster.photos.length;
+        cluster.centerLng = cluster.photos.reduce((sum, p) =>
+          sum + parseFloat(p.longitude), 0) / cluster.photos.length;
+
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      clusters.push({
+        centerLat: photoLat,
+        centerLng: photoLng,
+        photos: [photo],
+        totalViews: parseInt(photo.views || 0),
+        uniquePhotographers: new Set([photo.owner]).size
+      });
+    }
+  });
+
+  return clusters;
+}
+
+/**
+ * Determine shot type from tags
+ */
+function determineShotType(tags) {
+  const cityTags = ['city', 'urban', 'downtown', 'skyline', 'cityscape', 'architecture'];
+  const natureTags = ['nature', 'landscape', 'forest', 'mountain', 'tree', 'wildlife'];
+  const waterTags = ['water', 'lake', 'river', 'ocean', 'beach', 'harbor'];
+
+  const cityCount = tags.filter(t => cityTags.includes(t.toLowerCase())).length;
+  const natureCount = tags.filter(t => natureTags.includes(t.toLowerCase())).length;
+  const waterCount = tags.filter(t => waterTags.includes(t.toLowerCase())).length;
+
+  if (cityCount > natureCount && cityCount > waterCount) return 'cityscape';
+  if (waterCount > natureCount) return 'water';
+  return 'landscape';
+}
+
+/**
+ * Get most common tags
+ */
+function getMostCommonTags(tags, limit = 10) {
+  const tagCounts = {};
+  tags.forEach(tag => {
+    const normalized = tag.toLowerCase().trim();
+    if (normalized && normalized.length > 2) {
+      tagCounts[normalized] = (tagCounts[normalized] || 0) + 1;
+    }
+  });
+
+  return Object.entries(tagCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([tag]) => tag);
+}
+
+/**
+ * Determine best time to shoot from tags
+ */
+function determineBestTime(tags) {
+  const lowerTags = tags.map(t => t.toLowerCase());
+
+  if (lowerTags.includes('sunset') || lowerTags.includes('dusk')) {
+    return 'Golden hour (evening)';
+  }
+  if (lowerTags.includes('sunrise') || lowerTags.includes('dawn')) {
+    return 'Golden hour (morning)';
+  }
+  if (lowerTags.includes('night') || lowerTags.includes('nightscape')) {
+    return 'Night/Blue hour';
+  }
+
+  return 'Golden hour';
+}
+
+/**
+ * Generate descriptive name from location and tags
+ */
+function generateHotspotName(hotspot, tags) {
+  const commonTags = getMostCommonTags(tags, 5);
+
+  // Try to find location-specific tags
+  const locationTags = commonTags.filter(tag =>
+    !['aerial', 'drone', 'dji', 'landscape', 'photo', 'photography'].includes(tag)
+  );
+
+  if (locationTags.length > 0) {
+    return locationTags[0].charAt(0).toUpperCase() + locationTags[0].slice(1) + ' Photo Spot';
+  }
+
+  // Fallback to coordinate-based name
+  const shotType = determineShotType(tags);
+  return `${shotType.charAt(0).toUpperCase() + shotType.slice(1)} Hotspot`;
 }
 
 /**

@@ -1982,8 +1982,8 @@
             }
 
             /**
-             * V10.0: Unified search function - tries Google Places first, falls back to OSM
-             * This is the main entry point for POI searching
+             * V10.1: Unified search function - Flickr Photo Hotspots (PRIMARY), then fallbacks
+             * Photos define locations, not places defining photos!
              */
             async function searchForDroneSpots(lat, lng, radiusKm = null, locationName = '') {
                 try {
@@ -1992,20 +1992,19 @@
                         radiusKm = state.userProfile.preferences.searchRadius_mi * 1.60934; // Convert miles to km
                     }
 
-                    const radiusMeters = radiusKm * 1000;
-
                     console.log(`🚁 Searching for drone spots: ${radiusKm.toFixed(1)}km (${(radiusKm * 0.621371).toFixed(1)} mi) radius`);
 
-                    // Try Google Places first
-                    const googleResult = await searchGooglePlaces(lat, lng, radiusMeters, locationName);
+                    // PRIMARY METHOD: Flickr Photo Hotspots
+                    // Find where photographers actually shoot, not just "places"
+                    const flickrResult = await searchFlickrHotspots(lat, lng, radiusKm, locationName);
 
-                    if (googleResult.success && googleResult.spots.length > 0) {
-                        console.log(`✅ Using ${googleResult.count} spots from Google Places`);
-                        return googleResult.spots;
+                    if (flickrResult.success && flickrResult.spots.length > 0) {
+                        console.log(`✅ Using ${flickrResult.count} photo hotspots from Flickr`);
+                        return flickrResult.spots;
                     }
 
-                    // Fallback to OpenStreetMap
-                    console.log('⚠️ Google Places unavailable or returned no results. Trying OpenStreetMap...');
+                    // Fallback to OpenStreetMap if Flickr fails
+                    console.log('⚠️ Flickr photo hotspots unavailable. Trying OpenStreetMap...');
                     const osmSpots = await searchPOIsNearLocation(lat, lng, radiusKm, locationName);
 
                     if (osmSpots && osmSpots.length > 0) {
@@ -2020,6 +2019,166 @@
                     console.error('Search error:', error);
                     return [];
                 }
+            }
+
+            /**
+             * V10.1: Search Flickr for photo hotspots via Cloudflare Worker
+             * This is THE RIGHT APPROACH per Claude chat recommendation
+             */
+            async function searchFlickrHotspots(lat, lng, radiusKm, locationName = '') {
+                try {
+                    console.log(`📸 Flickr photo hotspot search: ${radiusKm}km radius from [${lat.toFixed(4)}, ${lng.toFixed(4)}]`);
+
+                    const workerUrl = state.syncSettings?.workerUrl;
+                    if (!workerUrl) {
+                        console.warn('⚠️ Worker URL not configured');
+                        return { success: false, error: 'Worker URL not configured' };
+                    }
+
+                    const url = `${workerUrl}/api/flickr/photospots?lat=${lat}&lon=${lng}&radius=${radiusKm}`;
+
+                    console.log(`📡 Fetching from worker: ${url}`);
+
+                    const response = await fetch(url);
+
+                    if (!response.ok) {
+                        console.error('Worker API error:', response.status);
+                        return { success: false, error: `Worker error: ${response.status}` };
+                    }
+
+                    const data = await response.json();
+
+                    if (!data.success || !data.results || data.results.length === 0) {
+                        console.warn('No Flickr photo hotspots found');
+                        return { success: false, error: data.error || 'No hotspots found' };
+                    }
+
+                    console.log(`✅ Found ${data.count} photo hotspots from ${data.totalPhotosAnalyzed} photos`);
+
+                    // Process Flickr hotspots into DroneScout format
+                    const processedSpots = await processFlickrHotspots(data.results, lat, lng, locationName);
+
+                    return {
+                        success: true,
+                        spots: processedSpots,
+                        count: processedSpots.length
+                    };
+
+                } catch (error) {
+                    console.error('❌ Flickr hotspot search error:', error);
+                    return { success: false, error: error.message };
+                }
+            }
+
+            /**
+             * Process Flickr hotspots into DroneScout spot format
+             */
+            async function processFlickrHotspots(hotspots, centerLat, centerLng, locationName = '') {
+                const spots = [];
+
+                for (let index = 0; index < Math.min(hotspots.length, 15); index++) {
+                    const hotspot = hotspots[index];
+
+                    try {
+                        // Calculate distance
+                        const distance = calculateDistance(centerLat, centerLng, hotspot.lat, hotspot.lng);
+
+                        // Fetch weather and obstacles in parallel
+                        const [weatherData, obstacleData] = await Promise.all([
+                            fetchCurrentWeather(hotspot.lat, hotspot.lng, 'imperial'),
+                            detectObstacles(hotspot.lat, hotspot.lng, 500).catch(() => ({ count: 0, types: [], risk: 'low' }))
+                        ]);
+
+                        // Determine spot type from Flickr tags
+                        const spotType = {
+                            category: hotspot.shotType || 'landscape',
+                            name: 'Photo Hotspot',
+                            bestTime: hotspot.bestTimeToShoot || 'Golden hour',
+                            shotTypes: determineShotTypesFromTags(hotspot.tags)
+                        };
+
+                        spots.push({
+                            id: hotspot.id,
+                            name: hotspot.name,
+                            description: hotspot.description + ` • Tags: ${hotspot.tags.slice(0, 3).join(', ')}`,
+                            coordinates: { lat: hotspot.lat, lng: hotspot.lng },
+                            imageUrl: hotspot.photos[0]?.url || hotspot.photos[0]?.url_large,
+                            imageSource: 'flickr',
+                            imageMetadata: {
+                                flickrPhotos: hotspot.photos,
+                                photoCount: hotspot.photoCount,
+                                totalViews: hotspot.totalViews,
+                                avgViews: hotspot.avgViews
+                            },
+                            flightInstructions: `Popular photo spot - ${hotspot.photoCount} photos by ${hotspot.photos.length} photographers`,
+                            bestTime: spotType.bestTime,
+                            x10Advantage: "X10's advanced autonomy enables safe navigation to replicate these popular shots.",
+                            distance: `${distance.toFixed(1)} mi`,
+                            riskScore: calculateRiskScore({}, spotType),
+                            shotTypes: spotType.shotTypes,
+                            airspaceDetails: {
+                                class: "Class G (Uncontrolled)",
+                                ceiling: "Up to 400 ft AGL authorized",
+                                laancRequired: "Check local requirements",
+                                nearestAirport: "Verify on SkyVector/B4UFLY"
+                            },
+                            regulations: [
+                                { authority: "FAA Part 107", rule: "Visual line of sight required", compliant: true },
+                                { authority: "Local Authority", rule: "Verify local drone regulations before flight", compliant: true }
+                            ],
+                            weather: weatherData.weather,
+                            weatherError: weatherData.error,
+                            weatherConditions: weatherData.weather ? {
+                                wind: `${weatherData.weather.windSpeed} ${weatherData.weather.windSpeedUnit}`,
+                                visibility: `${weatherData.weather.visibility} ${weatherData.weather.visibilityUnit}`,
+                                temp: `${weatherData.weather.temp}${weatherData.weather.tempUnit}`,
+                                conditions: weatherData.weather.conditions
+                            } : {
+                                wind: "Check current conditions",
+                                visibility: "Check current conditions",
+                                temp: "Check current conditions",
+                                conditions: "Verify before flight"
+                            },
+                            intelligence: {
+                                obstacles: obstacleData,
+                                access: { status: 'check_locally', score: 10 },
+                                populationDensity: { density: 'unknown' },
+                                cellCoverage: 'good',
+                                flickrPopularity: hotspot.totalViews
+                            }
+                        });
+
+                    } catch (error) {
+                        console.error(`Error processing hotspot ${hotspot.name}:`, error);
+                    }
+                }
+
+                // Sort by distance
+                return spots.sort((a, b) => {
+                    const distA = parseFloat(a.distance);
+                    const distB = parseFloat(b.distance);
+                    return distA - distB;
+                });
+            }
+
+            /**
+             * Determine shot types from Flickr tags
+             */
+            function determineShotTypesFromTags(tags) {
+                const cityTags = ['city', 'urban', 'downtown', 'skyline', 'cityscape', 'architecture'];
+                const natureTags = ['nature', 'landscape', 'forest', 'mountain', 'tree', 'wildlife'];
+                const waterTags = ['water', 'lake', 'river', 'ocean', 'beach', 'harbor'];
+
+                const cityCount = tags.filter(t => cityTags.includes(t.toLowerCase())).length;
+                const natureCount = tags.filter(t => natureTags.includes(t.toLowerCase())).length;
+                const waterCount = tags.filter(t => waterTags.includes(t.toLowerCase())).length;
+
+                return {
+                    cityscape: Math.min(100, cityCount * 20),
+                    nature: Math.min(100, natureCount * 20),
+                    landscape: Math.min(100, (natureCount + waterCount) * 15),
+                    architecture: Math.min(100, cityCount * 15)
+                };
             }
 
             // ========================================
