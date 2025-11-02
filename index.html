@@ -1730,17 +1730,77 @@
 
             // Generate description based on tags
             function generateDescription(tags, spotType) {
-                const name = tags.name || spotType.name;
-                if (tags.tourism === 'viewpoint' || tags.natural === 'peak') {
-                    return `Elevated viewpoint offering panoramic aerial perspectives. Ideal for wide-angle landscape shots and tracking footage.`;
+                // Use real OSM description if available
+                if (tags.description) {
+                    return tags.description;
+                }
+
+                // Build description from available OSM tags
+                let parts = [];
+
+                // Feature type
+                if (tags.natural === 'peak') {
+                    parts.push(tags.ele ? `Mountain peak at ${tags.ele}m elevation` : 'Mountain peak');
+                } else if (tags.natural === 'beach') {
+                    parts.push('Beach area');
                 } else if (tags.natural === 'water') {
-                    return `Water feature with reflective surfaces. Perfect for sunrise/sunset shots with mirror-like reflections.`;
+                    const waterType = tags.water || 'water';
+                    parts.push(`${waterType.charAt(0).toUpperCase() + waterType.slice(1)} feature`);
+                } else if (tags.tourism === 'viewpoint') {
+                    parts.push(tags.ele ? `Viewpoint at ${tags.ele}m elevation` : 'Scenic viewpoint');
                 } else if (tags.leisure === 'park') {
-                    return `Open park area with varied terrain. Good for cinematic tracking shots and nature content.`;
+                    parts.push('Public park');
+                } else if (tags.leisure === 'nature_reserve') {
+                    parts.push('Nature reserve');
+                } else if (tags.landuse === 'forest') {
+                    parts.push('Forest area');
+                } else if (tags.man_made === 'tower' && tags['tower:type'] === 'observation') {
+                    parts.push('Observation tower');
+                }
+
+                // Add location context if available
+                if (tags.operator) {
+                    parts.push(`managed by ${tags.operator}`);
+                }
+
+                // Add notable info
+                if (tags.wikipedia || tags.wikidata) {
+                    parts.push('notable landmark');
+                }
+
+                // Add access info
+                if (tags.access === 'private') {
+                    parts.push('(private property - verify permission)');
+                } else if (tags.access === 'permissive') {
+                    parts.push('(permission required)');
+                }
+
+                // If we have parts, join them
+                if (parts.length > 0) {
+                    let desc = parts[0];
+                    if (parts.length > 1) {
+                        desc += ', ' + parts.slice(1).join(', ');
+                    }
+                    desc += '. ' + getGenericDroneAdvice(tags, spotType);
+                    return desc;
+                }
+
+                // Fallback to generic description
+                return getGenericDroneAdvice(tags, spotType);
+            }
+
+            // Get generic drone photography advice based on spot type
+            function getGenericDroneAdvice(tags, spotType) {
+                if (tags.tourism === 'viewpoint' || tags.natural === 'peak') {
+                    return 'Ideal for panoramic aerial shots and wide-angle landscape footage.';
+                } else if (tags.natural === 'water' || tags.natural === 'beach') {
+                    return 'Perfect for capturing reflections and coastal perspectives.';
+                } else if (tags.leisure === 'park') {
+                    return 'Good for cinematic tracking shots and varied terrain.';
                 } else if (tags.leisure === 'nature_reserve' || tags.landuse === 'forest') {
-                    return `Natural area with diverse ecosystems. Excellent for wildlife and forest canopy footage.`;
+                    return 'Excellent for wildlife and forest canopy footage.';
                 } else {
-                    return `Scenic location suitable for aerial photography and drone cinematography.`;
+                    return 'Suitable location for aerial photography.';
                 }
             }
 
