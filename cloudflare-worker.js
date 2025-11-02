@@ -209,10 +209,17 @@ async function handleFlightDetails(flightId, apiToken) {
   // v0 response: { data: { flight: {...}, flight_telemetry: {...} }, meta: {...}, status_code: 200 }
   const flight = flightData.data?.flight || flightData.data;
 
+  // Log ALL available telemetry fields for debugging
+  if (telemetryData?.data?.flight_telemetry) {
+    console.log('Available telemetry fields:', Object.keys(telemetryData.data.flight_telemetry));
+  }
+
   // Parse telemetry - structure is data.flight_telemetry with GPS/altitude/timestamps
   let telemetryTrack = null;
+  let telemetryStats = null;
   if (telemetryData?.data?.flight_telemetry) {
     const telem = telemetryData.data.flight_telemetry;
+
     // GPS data is array of [lat, lon] pairs with corresponding timestamps
     if (telem.gps?.data && telem.gps?.timestamps) {
       telemetryTrack = telem.gps.timestamps.map((timestamp, idx) => ({
@@ -222,7 +229,35 @@ async function handleFlightDetails(flightId, apiToken) {
         altitude: telem.altitude?.data?.[idx] || 0,
         batteryPct: telem.battery_percentage?.data?.[idx],
         heightAboveTakeoff: telem.height_above_takeoff?.data?.[idx],
+        // Include ALL available telemetry fields
+        speed: telem.speed?.data?.[idx],
+        windSpeed: telem.wind_speed?.data?.[idx],
+        windDirection: telem.wind_direction?.data?.[idx],
+        heading: telem.heading?.data?.[idx],
+        gimbalPitch: telem.gimbal_pitch?.data?.[idx],
+        gimbalYaw: telem.gimbal_yaw?.data?.[idx],
       }));
+
+      // Calculate summary stats from telemetry
+      const speeds = telemetryTrack.map(p => p.speed).filter(s => s != null);
+      const altitudes = telemetryTrack.map(p => p.altitude).filter(a => a != null);
+      const heights = telemetryTrack.map(p => p.heightAboveTakeoff).filter(h => h != null);
+      const windSpeeds = telemetryTrack.map(p => p.windSpeed).filter(w => w != null);
+      const batteries = telemetryTrack.map(p => p.batteryPct).filter(b => b != null);
+
+      telemetryStats = {
+        maxSpeed: speeds.length > 0 ? Math.max(...speeds) : null,
+        avgSpeed: speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : null,
+        maxAltitude: altitudes.length > 0 ? Math.max(...altitudes) : null,
+        avgAltitude: altitudes.length > 0 ? altitudes.reduce((a, b) => a + b, 0) / altitudes.length : null,
+        maxHeight: heights.length > 0 ? Math.max(...heights) : null,
+        avgHeight: heights.length > 0 ? heights.reduce((a, b) => a + b, 0) / heights.length : null,
+        maxWindSpeed: windSpeeds.length > 0 ? Math.max(...windSpeeds) : null,
+        avgWindSpeed: windSpeeds.length > 0 ? windSpeeds.reduce((a, b) => a + b, 0) / windSpeeds.length : null,
+        startBattery: batteries.length > 0 ? batteries[0] : null,
+        endBattery: batteries.length > 0 ? batteries[batteries.length - 1] : null,
+        batteryUsed: batteries.length > 0 ? batteries[0] - batteries[batteries.length - 1] : null,
+      };
     }
   }
 
@@ -244,6 +279,7 @@ async function handleFlightDetails(flightId, apiToken) {
     telemetry: telemetryTrack ? {
       track: telemetryTrack,
       pointCount: telemetryTrack.length,
+      stats: telemetryStats,
     } : null,
   });
 }

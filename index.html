@@ -2363,7 +2363,7 @@
                         <h2 style="font-size: 18px; font-weight: 700; color: #1e3c72; margin-bottom: 15px;">
                             Flight History (${state.flights.length})
                         </h2>
-                        ${state.flights.map(flight => {
+                        ${state.flights.slice().reverse().map(flight => {
                             // V7.1 Debug: Log flight sync status
                             console.log('Flight:', flight.id, 'synced:', flight.synced, 'type:', flight.type);
                             const rating = state.ratings.find(r => r.flightId === flight.id);
@@ -2386,6 +2386,62 @@
                                         ${flight.duration ? `<p><strong>Duration:</strong> ${Math.round(flight.duration / 60)}m</p>` : ''}
                                         ${flight.notes ? `<p><strong>Notes:</strong> ${flight.notes}</p>` : ''}
                                     </div>
+
+                                    <!-- Telemetry Stats (for synced flights with telemetry) -->
+                                    ${flight.synced && flight.telemetry?.stats ? `
+                                        <details style="margin-top: 12px;" class="telemetry-details">
+                                            <summary style="cursor: pointer; padding: 8px 12px; background: #f0f4f8; border-radius: 6px; font-weight: 600; color: #1e3c72; user-select: none;">
+                                                📊 Flight Telemetry
+                                            </summary>
+                                            <div style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-top: 8px;">
+                                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 13px;">
+                                                    ${flight.telemetry.stats.maxSpeed != null ? `
+                                                        <div>
+                                                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Max Speed</div>
+                                                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${(flight.telemetry.stats.maxSpeed * 2.23694).toFixed(1)} mph</div>
+                                                            <div style="color: #999; font-size: 11px;">${flight.telemetry.stats.maxSpeed.toFixed(1)} m/s</div>
+                                                        </div>
+                                                    ` : ''}
+                                                    ${flight.telemetry.stats.avgSpeed != null ? `
+                                                        <div>
+                                                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Avg Speed</div>
+                                                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${(flight.telemetry.stats.avgSpeed * 2.23694).toFixed(1)} mph</div>
+                                                            <div style="color: #999; font-size: 11px;">${flight.telemetry.stats.avgSpeed.toFixed(1)} m/s</div>
+                                                        </div>
+                                                    ` : ''}
+                                                    ${flight.telemetry.stats.maxAltitude != null ? `
+                                                        <div>
+                                                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Max Altitude</div>
+                                                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${(flight.telemetry.stats.maxAltitude * 3.28084).toFixed(0)} ft</div>
+                                                            <div style="color: #999; font-size: 11px;">${flight.telemetry.stats.maxAltitude.toFixed(1)} m</div>
+                                                        </div>
+                                                    ` : ''}
+                                                    ${flight.telemetry.stats.maxHeight != null ? `
+                                                        <div>
+                                                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Max Height AGL</div>
+                                                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${(flight.telemetry.stats.maxHeight * 3.28084).toFixed(0)} ft</div>
+                                                            <div style="color: #999; font-size: 11px;">${flight.telemetry.stats.maxHeight.toFixed(1)} m</div>
+                                                        </div>
+                                                    ` : ''}
+                                                    ${flight.telemetry.stats.maxWindSpeed != null ? `
+                                                        <div>
+                                                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Max Wind</div>
+                                                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${(flight.telemetry.stats.maxWindSpeed * 2.23694).toFixed(1)} mph</div>
+                                                            <div style="color: #999; font-size: 11px;">${flight.telemetry.stats.maxWindSpeed.toFixed(1)} m/s</div>
+                                                        </div>
+                                                    ` : ''}
+                                                    ${flight.telemetry.stats.batteryUsed != null ? `
+                                                        <div>
+                                                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Battery Used</div>
+                                                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${flight.telemetry.stats.batteryUsed.toFixed(0)}%</div>
+                                                            <div style="color: #999; font-size: 11px;">${flight.telemetry.stats.startBattery?.toFixed(0)}% → ${flight.telemetry.stats.endBattery?.toFixed(0)}%</div>
+                                                        </div>
+                                                    ` : ''}
+                                                </div>
+                                            </div>
+                                        </details>
+                                    ` : ''}
+
                                     ${!rating ? `
                                         <div style="display: flex; gap: 10px; margin-top: 12px;">
                                             <button class="btn-small" data-action="rate" data-flight-id="${flight.id}">
