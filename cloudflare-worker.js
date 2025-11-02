@@ -328,6 +328,40 @@ async function handleFlightDetails(flightId, apiToken) {
           }
         }
       });
+
+      // Calculate total distance traveled from GPS track
+      // Use Haversine formula to calculate distance between consecutive GPS points
+      function haversineDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371000; // Earth's radius in meters
+        const toRad = (deg) => (deg * Math.PI) / 180;
+
+        const dLat = toRad(lat2 - lat1);
+        const dLon = toRad(lon2 - lon1);
+
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                  Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c; // Distance in meters
+      }
+
+      let totalDistance = 0;
+      for (let i = 1; i < telemetryTrack.length; i++) {
+        const prev = telemetryTrack[i - 1];
+        const curr = telemetryTrack[i];
+
+        if (prev.lat && prev.lon && curr.lat && curr.lon) {
+          totalDistance += haversineDistance(prev.lat, prev.lon, curr.lat, curr.lon);
+        }
+      }
+
+      // Add distance as a custom stat (in meters, frontend will convert to miles)
+      telemetryStats._distance_traveled = {
+        total: totalDistance,
+        miles: totalDistance * 0.000621371, // Convert meters to miles
+        kilometers: totalDistance / 1000,
+      };
     }
   }
 

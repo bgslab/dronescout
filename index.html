@@ -1755,8 +1755,72 @@
                 });
             }
 
-            // Render ALL telemetry stats dynamically
+            // Render telemetry stats - ONLY Speed, Altitude, Distance
             function renderAllTelemetryStats(stats) {
+                let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 13px;">';
+
+                // 1. SPEED (from velocity field)
+                if (stats.velocity) {
+                    const maxSpeedMph = (stats.velocity.max * 2.23694).toFixed(1);
+                    const maxSpeedMs = stats.velocity.max.toFixed(1);
+                    const avgSpeedMph = (stats.velocity.avg * 2.23694).toFixed(1);
+                    const avgSpeedMs = stats.velocity.avg.toFixed(1);
+
+                    html += `
+                        <div>
+                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Max Speed</div>
+                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${maxSpeedMph} mph</div>
+                            <div style="color: #999; font-size: 11px;">${maxSpeedMs} m/s</div>
+                        </div>
+                        <div>
+                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Avg Speed</div>
+                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${avgSpeedMph} mph</div>
+                            <div style="color: #999; font-size: 11px;">${avgSpeedMs} m/s</div>
+                        </div>
+                    `;
+                }
+
+                // 2. ALTITUDE (from height_above_takeoff field)
+                if (stats.height_above_takeoff) {
+                    const maxAltFt = (stats.height_above_takeoff.max * 3.28084).toFixed(0);
+                    const maxAltM = stats.height_above_takeoff.max.toFixed(1);
+                    const avgAltFt = (stats.height_above_takeoff.avg * 3.28084).toFixed(0);
+                    const avgAltM = stats.height_above_takeoff.avg.toFixed(1);
+
+                    html += `
+                        <div>
+                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Max Altitude</div>
+                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${maxAltFt} ft</div>
+                            <div style="color: #999; font-size: 11px;">${maxAltM} m AGL</div>
+                        </div>
+                        <div>
+                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Avg Altitude</div>
+                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${avgAltFt} ft</div>
+                            <div style="color: #999; font-size: 11px;">${avgAltM} m AGL</div>
+                        </div>
+                    `;
+                }
+
+                // 3. DISTANCE TRAVELED (calculated from GPS track)
+                if (stats._distance_traveled) {
+                    const distMiles = stats._distance_traveled.miles.toFixed(2);
+                    const distKm = stats._distance_traveled.kilometers.toFixed(2);
+
+                    html += `
+                        <div>
+                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Distance Traveled</div>
+                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${distMiles} mi</div>
+                            <div style="color: #999; font-size: 11px;">${distKm} km</div>
+                        </div>
+                    `;
+                }
+
+                html += '</div>';
+                return html;
+            }
+
+            // OLD COMPLEX FUNCTION - REMOVED
+            function renderAllTelemetryStats_OLD(stats) {
                 // Field display configuration with units and formatting
                 // Based on actual Skydio API fields (see field report in console)
                 const fieldConfig = {
