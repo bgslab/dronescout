@@ -1744,6 +1744,141 @@
                 }
             }
 
+            // Load flight map inline (no tab switching)
+            async function loadInlineFlightMap(flightId) {
+                try {
+                    const mapContainerId = `inline-map-${flightId}`;
+                    const mapContainer = document.getElementById(mapContainerId);
+
+                    if (!mapContainer) {
+                        console.error('Inline map container not found:', mapContainerId);
+                        return;
+                    }
+
+                    // Show loading state
+                    mapContainer.innerHTML = '<div style="text-align: center; padding: 180px 20px; color: #666;"><span class="spinner"></span> Loading map...</div>';
+
+                    // Check if telemetry is already loaded
+                    const flight = state.flights.find(f => f.id === flightId);
+                    let telemetry = flight?.telemetry;
+
+                    // If not loaded, fetch it
+                    if (!telemetry) {
+                        const details = await fetchFlightDetails(flightId);
+                        if (!details || !details.telemetry || !details.telemetry.track) {
+                            mapContainer.innerHTML = '<div style="text-align: center; padding: 180px 20px; color: #999;">No telemetry data available</div>';
+                            return;
+                        }
+
+                        // Save to state
+                        const flightIndex = state.flights.findIndex(f => f.id === flightId);
+                        if (flightIndex >= 0) {
+                            state.flights[flightIndex] = {
+                                ...state.flights[flightIndex],
+                                telemetry: details.telemetry,
+                                details: details.flight
+                            };
+                            saveToStorage('flights', state.flights);
+                        }
+
+                        telemetry = details.telemetry;
+                    }
+
+                    // Clear container for map
+                    mapContainer.innerHTML = '';
+
+                    // Process GPS coordinates (same filtering as viewFlightPath)
+                    const allPoints = telemetry.track
+                        .filter(point => point.lat !== 0 && point.lon !== 0)
+                        .map(point => [point.lat, point.lon]);
+
+                    const lats = allPoints.map(p => p[0]).sort((a, b) => a - b);
+                    const lons = allPoints.map(p => p[1]).sort((a, b) => a - b);
+                    const medianLat = lats[Math.floor(lats.length / 2)];
+                    const medianLon = lons[Math.floor(lons.length / 2)];
+
+                    const pathCoords = allPoints.filter(point => {
+                        const latDiff = Math.abs(point[0] - medianLat);
+                        const lonDiff = Math.abs(point[1] - medianLon);
+                        return latDiff < 0.7 && lonDiff < 0.7;
+                    });
+
+                    if (pathCoords.length === 0) {
+                        mapContainer.innerHTML = '<div style="text-align: center; padding: 180px 20px; color: #999;">No valid GPS coordinates</div>';
+                        return;
+                    }
+
+                    // Reduce points for performance
+                    let displayCoords = pathCoords;
+                    if (pathCoords.length > 500) {
+                        const skipFactor = Math.ceil(pathCoords.length / 500);
+                        displayCoords = pathCoords.filter((_, idx) => idx % skipFactor === 0);
+                    }
+
+                    // Create map
+                    const map = L.map(mapContainer, {
+                        scrollWheelZoom: true,
+                        dragging: true,
+                        touchZoom: true,
+                        doubleClickZoom: true
+                    }).setView([medianLat, medianLon], 15);
+
+                    // Add tile layer
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap',
+                        crossOrigin: true,
+                        maxZoom: 19
+                    }).addTo(map);
+
+                    // Draw flight path
+                    const flightPath = L.polyline(displayCoords, {
+                        color: '#1e3c72',
+                        weight: 3,
+                        opacity: 0.8
+                    }).addTo(map);
+
+                    // Add start and end markers
+                    L.marker(displayCoords[0], {
+                        icon: L.divIcon({
+                            className: 'start-marker',
+                            html: '<div style="background: #22c55e; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">S</div>',
+                            iconSize: [24, 24]
+                        })
+                    }).addTo(map).bindPopup('Start');
+
+                    L.marker(displayCoords[displayCoords.length - 1], {
+                        icon: L.divIcon({
+                            className: 'end-marker',
+                            html: '<div style="background: #ef4444; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">E</div>',
+                            iconSize: [24, 24]
+                        })
+                    }).addTo(map).bindPopup('End');
+
+                    // Fit to path
+                    map.fitBounds(flightPath.getBounds(), {
+                        padding: [30, 30],
+                        maxZoom: 16
+                    });
+
+                    // Force size calculation
+                    setTimeout(() => map.invalidateSize(), 100);
+
+                    // Store map reference
+                    if (!state.inlineMaps) state.inlineMaps = {};
+                    state.inlineMaps[flightId] = map;
+
+                    // Re-render to update telemetry display
+                    render();
+
+                } catch (error) {
+                    console.error('Error loading inline map:', error);
+                    const mapContainer = document.getElementById(`inline-map-${flightId}`);
+                    if (mapContainer) {
+                        mapContainer.innerHTML = `<div style="text-align: center; padding: 180px 20px; color: #e74c3c;">Error: ${error.message}</div>`;
+                    }
+                }
+            }
+
             function formatDate(dateString) {
                 const date = new Date(dateString);
                 return date.toLocaleDateString('en-US', {
@@ -1753,6 +1888,46 @@
                     hour: '2-digit',
                     minute: '2-digit'
                 });
+            }
+
+            // Generate descriptive flight name with drone model, time of day, and duration
+            function generateFlightName(flight) {
+                const date = new Date(flight.created_at || flight.date);
+                const hour = date.getHours();
+
+                // Time of day
+                let timeOfDay = '';
+                if (hour >= 5 && hour < 12) timeOfDay = 'Morning';
+                else if (hour >= 12 && hour < 17) timeOfDay = 'Afternoon';
+                else if (hour >= 17 && hour < 21) timeOfDay = 'Evening';
+                else timeOfDay = 'Night';
+
+                // Drone model from vehicle serial or flight name
+                let droneModel = '';
+                if (flight.metadata?.vehicle_serial) {
+                    droneModel = flight.metadata.vehicle_serial;
+                } else if (flight.name && flight.name.includes('Skydio')) {
+                    // Extract model from name like "SkydioX10-r6h6 Flight"
+                    const match = flight.name.match(/Skydio[^\s]+/);
+                    if (match) droneModel = match[0];
+                }
+
+                // Duration
+                const duration = flight.duration_seconds || flight.duration || 0;
+                const durationMin = Math.round(duration / 60);
+
+                // Location (if available from reverse geocoding - future enhancement)
+                // For now, use generic location or coordinates
+                const location = flight.location?.name || '';
+
+                // Build descriptive name
+                if (droneModel && location) {
+                    return `${droneModel} - ${timeOfDay} at ${location} (${durationMin}m)`;
+                } else if (droneModel) {
+                    return `${droneModel} - ${timeOfDay} Flight (${durationMin}m)`;
+                } else {
+                    return `${timeOfDay} Flight (${durationMin}m)`;
+                }
             }
 
             // Render telemetry stats - ONLY Speed, Altitude, Distance
@@ -2613,22 +2788,23 @@
                             console.log('Flight:', flight.id, 'synced:', flight.synced, 'type:', flight.type);
                             const rating = state.ratings.find(r => r.flightId === flight.id);
 
+                            const flightName = generateFlightName(flight);
+
                             return `
-                                <div class="flight-card">
+                                <div class="flight-card" id="flight-card-${flight.id}">
                                     <div class="flight-header">
                                         <div>
                                             <div class="flight-location">
-                                                ${flight.name || flight.location}
+                                                ${flightName}
                                                 ${rating ? '<span class="badge rated">★ Rated</span>' : '<span class="badge pending">⏳ Rate This</span>'}
                                             </div>
-                                            <div class="flight-date">${formatDate(flight.date)}</div>
+                                            <div class="flight-date">${formatDate(flight.created_at || flight.date)}</div>
                                         </div>
                                         <div class="flight-badge ${flight.type === 'manual' ? 'badge-manual' : 'badge-synced'}">
                                             ${flight.type === 'manual' ? '✏️ Manual' : '☁️ Synced'}
                                         </div>
                                     </div>
                                     <div class="flight-details">
-                                        ${flight.duration ? `<p><strong>Duration:</strong> ${Math.round(flight.duration / 60)}m</p>` : ''}
                                         ${flight.notes ? `<p><strong>Notes:</strong> ${flight.notes}</p>` : ''}
                                     </div>
 
@@ -2651,6 +2827,27 @@
                                                 `}
                                             </div>
                                         </details>
+
+                                        <!-- Inline Flight Path Map -->
+                                        <details style="margin-top: 12px;" class="map-details" data-flight-id="${flight.id}">
+                                            <summary style="cursor: pointer; padding: 8px 12px; background: #f0f4f8; border-radius: 6px; font-weight: 600; color: #1e3c72; user-select: none;">
+                                                🗺️ Flight Path Map ${flight.telemetry?.track ? '' : '(Click to load)'}
+                                            </summary>
+                                            <div style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-top: 8px;">
+                                                <div id="inline-map-${flight.id}" style="height: 400px; width: 100%; border-radius: 6px; overflow: hidden;">
+                                                    <div style="text-align: center; padding: 180px 20px; color: #666;">
+                                                        Click to load map...
+                                                    </div>
+                                                </div>
+                                                ${flight.telemetry?.track ? `
+                                                <div style="margin-top: 8px; text-align: center;">
+                                                    <button class="btn-small" data-action="openFullMap" data-flight-id="${flight.id}">
+                                                        🔍 Open Full Screen Map
+                                                    </button>
+                                                </div>
+                                                ` : ''}
+                                            </div>
+                                        </details>
                                     ` : ''}
 
                                     ${!rating ? `
@@ -2658,11 +2855,6 @@
                                             <button class="btn-small" data-action="rate" data-flight-id="${flight.id}">
                                                 ⭐ Rate This Flight
                                             </button>
-                                            ${flight.synced ? `
-                                            <button class="btn-small" data-action="viewPath" data-flight-id="${flight.id}">
-                                                🗺️ View Flight Path
-                                            </button>
-                                            ` : ''}
                                         </div>
                                     ` : `
                                         <div style="margin-top: 12px; padding: 10px; background: #f8f9fa; border-radius: 6px;">
@@ -3094,6 +3286,26 @@
                             showRatingModal(flightId);
                         } else if (action === 'viewPath') {
                             viewFlightPath(flightId);
+                        } else if (action === 'openFullMap') {
+                            // Open full screen map in Planner tab
+                            viewFlightPath(flightId, true); // true = open in planner tab
+                        }
+                    });
+                });
+
+                // Inline map handlers - load map when <details> is opened
+                const mapDetails = document.querySelectorAll('.map-details');
+                mapDetails.forEach(details => {
+                    details.addEventListener('toggle', async function(e) {
+                        if (this.open) {
+                            const flightId = this.dataset.flightId;
+                            const mapContainer = document.getElementById(`inline-map-${flightId}`);
+
+                            // Only load if not already loaded
+                            if (!mapContainer.classList.contains('map-loaded')) {
+                                await loadInlineFlightMap(flightId);
+                                mapContainer.classList.add('map-loaded');
+                            }
                         }
                     });
                 });
