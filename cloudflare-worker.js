@@ -209,9 +209,65 @@ async function handleFlightDetails(flightId, apiToken) {
   // v0 response: { data: { flight: {...}, flight_telemetry: {...} }, meta: {...}, status_code: 200 }
   const flight = flightData.data?.flight || flightData.data;
 
-  // Log ALL available telemetry fields for debugging
+  // COMPREHENSIVE TELEMETRY FIELD INSPECTION
+  let telemetryFieldReport = null;
   if (telemetryData?.data?.flight_telemetry) {
-    console.log('Available telemetry fields:', Object.keys(telemetryData.data.flight_telemetry));
+    const telem = telemetryData.data.flight_telemetry;
+    const fields = Object.keys(telem);
+
+    console.log('=== TELEMETRY FIELD INSPECTION ===');
+    console.log('Available fields:', fields);
+
+    // Analyze each field
+    const fieldAnalysis = {};
+    fields.forEach(fieldName => {
+      const field = telem[fieldName];
+      if (field && typeof field === 'object') {
+        const dataArray = field.data || [];
+        const timestamps = field.timestamps || [];
+
+        // Filter out null/undefined values for stats
+        const validValues = dataArray.filter(v => v != null && v !== undefined);
+        const nonZeroValues = validValues.filter(v => v !== 0);
+
+        fieldAnalysis[fieldName] = {
+          hasData: dataArray.length > 0,
+          totalPoints: dataArray.length,
+          validPoints: validValues.length,
+          nonZeroPoints: nonZeroValues.length,
+          nullPoints: dataArray.length - validValues.length,
+          zeroPoints: validValues.length - nonZeroValues.length,
+          sampleValues: validValues.slice(0, 5), // First 5 valid values
+          min: validValues.length > 0 ? Math.min(...validValues) : null,
+          max: validValues.length > 0 ? Math.max(...validValues) : null,
+          avg: validValues.length > 0 ? validValues.reduce((a, b) => a + b, 0) / validValues.length : null,
+          hasTimestamps: timestamps.length > 0,
+        };
+
+        console.log(`${fieldName}:`, {
+          points: dataArray.length,
+          valid: validValues.length,
+          nonZero: nonZeroValues.length,
+          range: validValues.length > 0 ? `${Math.min(...validValues)} to ${Math.max(...validValues)}` : 'N/A',
+          sample: validValues.slice(0, 3),
+        });
+      } else {
+        fieldAnalysis[fieldName] = {
+          hasData: false,
+          type: typeof field,
+          value: field,
+        };
+        console.log(`${fieldName}:`, typeof field, field);
+      }
+    });
+
+    telemetryFieldReport = {
+      fields: fields,
+      fieldCount: fields.length,
+      analysis: fieldAnalysis,
+    };
+
+    console.log('=== END TELEMETRY INSPECTION ===');
   }
 
   // Parse telemetry - structure is data.flight_telemetry with GPS/altitude/timestamps
@@ -280,6 +336,7 @@ async function handleFlightDetails(flightId, apiToken) {
       track: telemetryTrack,
       pointCount: telemetryTrack.length,
       stats: telemetryStats,
+      fieldReport: telemetryFieldReport, // Include comprehensive field analysis
     } : null,
   });
 }

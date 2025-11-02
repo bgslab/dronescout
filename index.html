@@ -1588,6 +1588,21 @@
                         console.log('Telemetry saved for flight:', flightId, details.telemetry.stats);
                     }
 
+                    // Display comprehensive field report in console
+                    if (details.telemetry?.fieldReport) {
+                        console.log('=== 📊 TELEMETRY FIELD REPORT ===');
+                        console.log('Available Fields:', details.telemetry.fieldReport.fields);
+                        console.log('Total Field Count:', details.telemetry.fieldReport.fieldCount);
+                        console.log('\n=== DETAILED FIELD ANALYSIS ===');
+
+                        Object.entries(details.telemetry.fieldReport.analysis).forEach(([fieldName, analysis]) => {
+                            console.log(`\n${fieldName}:`);
+                            console.log('  ', analysis);
+                        });
+
+                        console.log('\n=== END FIELD REPORT ===\n');
+                    }
+
                     // Switch to planner tab and render
                     state.currentTab = 'planner';
                     render();
