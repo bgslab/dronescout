@@ -1583,16 +1583,6 @@
                     // CRITICAL: Wait longer for tab transition and DOM layout to complete
                     await new Promise(resolve => setTimeout(resolve, 300));
 
-                    // SIMPLIFIED APPROACH: Use the working initMap pattern
-                    // Skip first point if it's 0,0 (bad data) - use a valid point instead
-                    let firstPoint = details.telemetry.track[0];
-                    if (firstPoint.lat === 0 && firstPoint.lon === 0) {
-                        // Find first valid point
-                        firstPoint = details.telemetry.track.find(p => p.lat !== 0 && p.lon !== 0) || details.telemetry.track[details.telemetry.track.length - 1];
-                        console.log('First point was 0,0 - using valid point instead:', firstPoint);
-                    }
-                    console.log('Flight path center point:', firstPoint);
-
                     // Clean up old map if exists
                     if (state.map) {
                         state.map.remove();
@@ -1611,23 +1601,34 @@
 
                     console.log('Container dimensions:', mapContainer.offsetWidth, 'x', mapContainer.offsetHeight);
 
-                    // Create map - SIMPLE approach without extra options
-                    state.map = L.map('mapContainer').setView([firstPoint.lat, firstPoint.lon], 15);
+                    // Convert telemetry to LatLng array - FILTER OUT BAD COORDINATES
+                    const pathCoords = details.telemetry.track
+                        .filter(point => {
+                            // Remove invalid GPS points (0,0) and extreme outliers
+                            return point.lat !== 0 && point.lon !== 0 &&
+                                   Math.abs(point.lat) <= 90 && Math.abs(point.lon) <= 180;
+                        })
+                        .map(point => [point.lat, point.lon]);
+
+                    console.log('Path coordinates (filtered):', pathCoords.length, 'First:', pathCoords[0], 'Last:', pathCoords[pathCoords.length-1]);
+
+                    if (pathCoords.length === 0) {
+                        console.error('No valid GPS coordinates in telemetry!');
+                        return;
+                    }
+
+                    // Create map - start with a default view, will adjust with fitBounds
+                    const centerPoint = pathCoords[Math.floor(pathCoords.length / 2)];
+                    state.map = L.map('mapContainer').setView(centerPoint, 15);
 
                     // Add OpenStreetMap tiles - SIMPLE approach
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                     }).addTo(state.map);
 
-                    console.log('Map created at:', state.map.getCenter(), 'zoom:', state.map.getZoom());
+                    console.log('Map created, drawing flight path with', pathCoords.length, 'points');
 
-                    console.log('Map created, drawing flight path with', details.telemetry.pointCount, 'points');
-
-                    // Convert telemetry to LatLng array
-                    const pathCoords = details.telemetry.track.map(point => [point.lat, point.lon]);
-                    console.log('Path coordinates:', pathCoords.length, 'First:', pathCoords[0], 'Last:', pathCoords[pathCoords.length-1]);
-
-                    // Draw flight path on map BEFORE removing other layers
+                    // Draw flight path on map
                     const flightPath = L.polyline(pathCoords, {
                         color: '#2563eb',
                         weight: 3,
@@ -1635,7 +1636,10 @@
                         className: 'flight-path'
                     }).addTo(state.map);
 
-                    console.log('Flight path added to map');
+                    // Automatically fit map to show entire flight path
+                    state.map.fitBounds(flightPath.getBounds(), { padding: [50, 50] });
+
+                    console.log('Flight path added, map fitted to bounds');
 
                     // Add markers for takeoff and landing
                     const startPoint = pathCoords[0];
