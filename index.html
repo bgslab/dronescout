@@ -1619,13 +1619,20 @@
                     // Force a reflow to ensure dimensions are applied
                     const forceReflow = mapContainer.offsetHeight;
 
-                    console.log('Map container dimensions:', {
+                    const diagnostics = {
                         height: mapContainer.offsetHeight,
                         width: mapContainer.offsetWidth,
                         visible: mapContainer.offsetParent !== null,
                         computedHeight: getComputedStyle(mapContainer).height,
-                        computedWidth: getComputedStyle(mapContainer).width
-                    });
+                        computedWidth: getComputedStyle(mapContainer).width,
+                        parentElement: mapContainer.parentElement?.tagName,
+                        leafletVersion: L.version,
+                        timestamp: new Date().toISOString()
+                    };
+                    console.log('Map container dimensions:', diagnostics);
+
+                    // Store diagnostics for later display
+                    window.mapDiagnostics = diagnostics;
 
                     // CRITICAL: Check if container has valid dimensions
                     if (mapContainer.offsetHeight === 0 || mapContainer.offsetWidth === 0) {
@@ -1685,6 +1692,31 @@
                     // Force another size invalidation after tiles start loading
                     state.map.invalidateSize(true);
                     console.log('Map size invalidated after tile layer added');
+
+                    // Store final diagnostics after map creation
+                    window.mapDiagnostics.mapCreated = true;
+                    window.mapDiagnostics.mapCenter = state.map.getCenter();
+                    window.mapDiagnostics.mapZoom = state.map.getZoom();
+                    window.mapDiagnostics.mapSize = state.map.getSize();
+                    window.mapDiagnostics.layerCount = Object.keys(state.map._layers).length;
+                    window.mapDiagnostics.tileLayerAdded = true;
+
+                    // After 2 seconds, capture tile loading status
+                    setTimeout(() => {
+                        window.mapDiagnostics.tilesLoaded = tilesLoaded;
+                        window.mapDiagnostics.tilesFailed = tilesFailed;
+                        window.mapDiagnostics.tilesRequested = tileUrls.size;
+                        console.log('=== FINAL MAP DIAGNOSTICS ===');
+                        console.log(JSON.stringify(window.mapDiagnostics, null, 2));
+                        console.log('=== END DIAGNOSTICS ===');
+
+                        // Display diagnostic banner if tiles didn't load
+                        if (tilesLoaded === 0 && tileUrls.size > 0) {
+                            alert('⚠️ MAP TILES NOT LOADING\n\nTiles requested: ' + tileUrls.size + '\nTiles loaded: 0\n\nCheck console for diagnostics or press Cmd+Option+J');
+                        } else if (tileUrls.size === 0) {
+                            alert('⚠️ NO TILES REQUESTED\n\nLeaflet is not requesting tiles!\n\nMap size: ' + window.mapDiagnostics.mapSize.x + 'x' + window.mapDiagnostics.mapSize.y + '\n\nCheck console for diagnostics');
+                        }
+                    }, 2000);
 
                     console.log('Map created, drawing flight path with', details.telemetry.pointCount, 'points');
 
@@ -2095,6 +2127,23 @@
                     <!-- Interactive Map - Always show for V7.1 flight paths -->
                     <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 20px;">
                         <div id="mapContainer" class="map-container" style="height: 400px; width: 100%;"></div>
+                    </div>
+
+                    <!-- Debug button for map diagnostics -->
+                    <div style="margin-bottom: 20px; text-align: center;">
+                        <button onclick="
+                            if (window.mapDiagnostics) {
+                                const text = JSON.stringify(window.mapDiagnostics, null, 2);
+                                navigator.clipboard.writeText(text);
+                                alert('📋 Diagnostics copied to clipboard!\\n\\nPaste into chat to share with support.');
+                                console.log('=== COPIED DIAGNOSTICS ===');
+                                console.log(text);
+                            } else {
+                                alert('No diagnostics available yet. Click \"View Flight Path\" first.');
+                            }
+                        " style="padding: 8px 16px; background: #6366f1; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                            📋 Copy Map Diagnostics
+                        </button>
                     </div>
 
                     ${state.spots.length > 0 ? `
