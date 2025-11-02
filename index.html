@@ -1867,8 +1867,7 @@
                     if (!state.inlineMaps) state.inlineMaps = {};
                     state.inlineMaps[flightId] = map;
 
-                    // Re-render to update telemetry display
-                    render();
+                    console.log('✅ Inline map loaded successfully for flight:', flightId);
 
                 } catch (error) {
                     console.error('Error loading inline map:', error);
@@ -3296,18 +3295,29 @@
                 // Inline map handlers - load map when <details> is opened
                 const mapDetails = document.querySelectorAll('.map-details');
                 mapDetails.forEach(details => {
-                    details.addEventListener('toggle', async function(e) {
+                    // Remove existing listener if any to prevent duplicates
+                    details.removeEventListener('toggle', details._toggleHandler);
+
+                    // Create and store handler
+                    details._toggleHandler = async function(e) {
                         if (this.open) {
                             const flightId = this.dataset.flightId;
                             const mapContainer = document.getElementById(`inline-map-${flightId}`);
 
+                            console.log('Map details opened for flight:', flightId);
+
                             // Only load if not already loaded
-                            if (!mapContainer.classList.contains('map-loaded')) {
+                            if (mapContainer && !mapContainer.classList.contains('map-loaded')) {
+                                console.log('Loading inline map...');
                                 await loadInlineFlightMap(flightId);
                                 mapContainer.classList.add('map-loaded');
+                            } else {
+                                console.log('Map already loaded');
                             }
                         }
-                    });
+                    };
+
+                    details.addEventListener('toggle', details._toggleHandler);
                 });
 
                 // Sync button
