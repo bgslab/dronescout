@@ -278,42 +278,56 @@ async function handleFlightDetails(flightId, apiToken) {
 
     // GPS data is array of [lat, lon] pairs with corresponding timestamps
     if (telem.gps?.data && telem.gps?.timestamps) {
-      telemetryTrack = telem.gps.timestamps.map((timestamp, idx) => ({
-        timestamp,
-        lat: telem.gps.data[idx][0], // [lat, lon] array
-        lon: telem.gps.data[idx][1],
-        altitude: telem.altitude?.data?.[idx] || 0,
-        batteryPct: telem.battery_percentage?.data?.[idx],
-        heightAboveTakeoff: telem.height_above_takeoff?.data?.[idx],
-        // Include ALL available telemetry fields
-        speed: telem.speed?.data?.[idx],
-        windSpeed: telem.wind_speed?.data?.[idx],
-        windDirection: telem.wind_direction?.data?.[idx],
-        heading: telem.heading?.data?.[idx],
-        gimbalPitch: telem.gimbal_pitch?.data?.[idx],
-        gimbalYaw: telem.gimbal_yaw?.data?.[idx],
-      }));
+      // Build telemetry track with ALL available fields dynamically
+      const allFields = Object.keys(telem).filter(key => key !== 'gps');
 
-      // Calculate summary stats from telemetry
-      const speeds = telemetryTrack.map(p => p.speed).filter(s => s != null);
-      const altitudes = telemetryTrack.map(p => p.altitude).filter(a => a != null);
-      const heights = telemetryTrack.map(p => p.heightAboveTakeoff).filter(h => h != null);
-      const windSpeeds = telemetryTrack.map(p => p.windSpeed).filter(w => w != null);
-      const batteries = telemetryTrack.map(p => p.batteryPct).filter(b => b != null);
+      telemetryTrack = telem.gps.timestamps.map((timestamp, idx) => {
+        const point = {
+          timestamp,
+          lat: telem.gps.data[idx][0], // [lat, lon] array
+          lon: telem.gps.data[idx][1],
+        };
 
-      telemetryStats = {
-        maxSpeed: speeds.length > 0 ? Math.max(...speeds) : null,
-        avgSpeed: speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : null,
-        maxAltitude: altitudes.length > 0 ? Math.max(...altitudes) : null,
-        avgAltitude: altitudes.length > 0 ? altitudes.reduce((a, b) => a + b, 0) / altitudes.length : null,
-        maxHeight: heights.length > 0 ? Math.max(...heights) : null,
-        avgHeight: heights.length > 0 ? heights.reduce((a, b) => a + b, 0) / heights.length : null,
-        maxWindSpeed: windSpeeds.length > 0 ? Math.max(...windSpeeds) : null,
-        avgWindSpeed: windSpeeds.length > 0 ? windSpeeds.reduce((a, b) => a + b, 0) / windSpeeds.length : null,
-        startBattery: batteries.length > 0 ? batteries[0] : null,
-        endBattery: batteries.length > 0 ? batteries[batteries.length - 1] : null,
-        batteryUsed: batteries.length > 0 ? batteries[0] - batteries[batteries.length - 1] : null,
-      };
+        // Add all other telemetry fields dynamically
+        allFields.forEach(fieldName => {
+          if (telem[fieldName]?.data) {
+            // Skip index 0 for altitude field (as user noted it's missing/invalid)
+            if (fieldName === 'altitude' && idx === 0) {
+              point[fieldName] = null;
+            } else {
+              point[fieldName] = telem[fieldName].data[idx];
+            }
+          }
+        });
+
+        return point;
+      });
+
+      // Calculate stats for ALL numeric fields dynamically
+      telemetryStats = {};
+
+      allFields.forEach(fieldName => {
+        if (telem[fieldName]?.data) {
+          const values = telemetryTrack
+            .map(p => p[fieldName])
+            .filter(v => v != null && !isNaN(v));
+
+          if (values.length > 0) {
+            const nonZeroValues = values.filter(v => v !== 0);
+
+            telemetryStats[fieldName] = {
+              min: Math.min(...values),
+              max: Math.max(...values),
+              avg: values.reduce((a, b) => a + b, 0) / values.length,
+              start: values[0],
+              end: values[values.length - 1],
+              change: values[0] - values[values.length - 1],
+              count: values.length,
+              hasNonZero: nonZeroValues.length > 0,
+            };
+          }
+        }
+      });
     }
   }
 

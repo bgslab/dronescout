@@ -1755,6 +1755,145 @@
                 });
             }
 
+            // Render ALL telemetry stats dynamically
+            function renderAllTelemetryStats(stats) {
+                // Field display configuration with units and formatting
+                const fieldConfig = {
+                    // Speed fields
+                    speed: { label: 'Speed', unit: 'speed', decimals: 1, showMinMax: true },
+                    velocity: { label: 'Velocity', unit: 'speed', decimals: 1, showMinMax: true },
+
+                    // Height/Altitude fields
+                    height_above_takeoff: { label: 'Height AGL', unit: 'distance', decimals: 0, showMinMax: true },
+                    altitude: { label: 'Altitude MSL', unit: 'distance', decimals: 0, showMinMax: true },
+
+                    // Battery fields
+                    battery_percentage: { label: 'Battery', unit: 'percent', decimals: 0, showChange: true },
+
+                    // Wind fields
+                    wind_speed: { label: 'Wind Speed', unit: 'speed', decimals: 1, showMinMax: true },
+                    wind_direction: { label: 'Wind Direction', unit: 'degrees', decimals: 0, showMinMax: false },
+
+                    // Orientation fields
+                    heading: { label: 'Heading', unit: 'degrees', decimals: 0, showMinMax: false },
+                    pitch: { label: 'Pitch', unit: 'degrees', decimals: 1, showMinMax: false },
+                    roll: { label: 'Roll', unit: 'degrees', decimals: 1, showMinMax: false },
+                    yaw: { label: 'Yaw', unit: 'degrees', decimals: 1, showMinMax: false },
+
+                    // Gimbal fields
+                    gimbal_pitch: { label: 'Gimbal Pitch', unit: 'degrees', decimals: 1, showMinMax: false },
+                    gimbal_yaw: { label: 'Gimbal Yaw', unit: 'degrees', decimals: 1, showMinMax: false },
+                    gimbal_roll: { label: 'Gimbal Roll', unit: 'degrees', decimals: 1, showMinMax: false },
+                };
+
+                // Unit conversion and formatting functions
+                function formatValue(value, unitType, decimals) {
+                    if (value == null) return 'N/A';
+
+                    switch(unitType) {
+                        case 'speed':
+                            // m/s to mph
+                            return {
+                                primary: `${(value * 2.23694).toFixed(decimals)} mph`,
+                                secondary: `${value.toFixed(decimals)} m/s`
+                            };
+                        case 'distance':
+                            // m to ft
+                            return {
+                                primary: `${(value * 3.28084).toFixed(decimals)} ft`,
+                                secondary: `${value.toFixed(decimals)} m`
+                            };
+                        case 'percent':
+                            return {
+                                primary: `${value.toFixed(decimals)}%`,
+                                secondary: null
+                            };
+                        case 'degrees':
+                            return {
+                                primary: `${value.toFixed(decimals)}°`,
+                                secondary: null
+                            };
+                        default:
+                            return {
+                                primary: value.toFixed(decimals),
+                                secondary: null
+                            };
+                    }
+                }
+
+                let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 13px;">';
+
+                // Render each field that exists in stats
+                Object.entries(stats).forEach(([fieldName, fieldStats]) => {
+                    const config = fieldConfig[fieldName];
+                    if (!config) {
+                        // Unknown field - render with basic formatting
+                        html += `
+                            <div>
+                                <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">${fieldName.replace(/_/g, ' ')}</div>
+                                <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">
+                                    Min: ${fieldStats.min?.toFixed(2)}<br>
+                                    Max: ${fieldStats.max?.toFixed(2)}<br>
+                                    Avg: ${fieldStats.avg?.toFixed(2)}
+                                </div>
+                                <div style="color: #999; font-size: 11px;">${fieldStats.count} points</div>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    // Check if field has valid data (not all zeros for non-percentage fields)
+                    if (!fieldStats.hasNonZero && config.unit !== 'percent') {
+                        return; // Skip fields with all zeros
+                    }
+
+                    const maxFormatted = formatValue(fieldStats.max, config.unit, config.decimals);
+                    const avgFormatted = formatValue(fieldStats.avg, config.unit, config.decimals);
+                    const minFormatted = formatValue(fieldStats.min, config.unit, config.decimals);
+                    const changeFormatted = formatValue(Math.abs(fieldStats.change), config.unit, config.decimals);
+
+                    if (config.showMinMax) {
+                        // Show min/max/avg
+                        html += `
+                            <div>
+                                <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">${config.label}</div>
+                                <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">
+                                    Max: ${maxFormatted.primary}
+                                </div>
+                                <div style="color: #999; font-size: 11px;">
+                                    ${maxFormatted.secondary || ''}
+                                    ${maxFormatted.secondary ? '<br>' : ''}
+                                    Avg: ${avgFormatted.primary}
+                                </div>
+                            </div>
+                        `;
+                    } else if (config.showChange) {
+                        // Show start/end/change (for battery)
+                        const startFormatted = formatValue(fieldStats.start, config.unit, config.decimals);
+                        const endFormatted = formatValue(fieldStats.end, config.unit, config.decimals);
+                        html += `
+                            <div>
+                                <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">${config.label} Used</div>
+                                <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${changeFormatted.primary}</div>
+                                <div style="color: #999; font-size: 11px;">${startFormatted.primary} → ${endFormatted.primary}</div>
+                            </div>
+                        `;
+                    } else {
+                        // Show average only (for directional fields)
+                        html += `
+                            <div>
+                                <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">${config.label} (avg)</div>
+                                <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${avgFormatted.primary}</div>
+                                <div style="color: #999; font-size: 11px;">Range: ${minFormatted.primary} - ${maxFormatted.primary}</div>
+                            </div>
+                        `;
+                    }
+                });
+
+                html += '</div>';
+                return html;
+            }
+
             // TEST FUNCTION: Load map with known-good coordinates
             window.testMapWithGoodData = function() {
                 console.log('🧪 Testing map with known-good Chicago coordinates...');
@@ -2421,52 +2560,7 @@
                                                 📊 Flight Telemetry ${flight.telemetry?.stats ? '' : '(Click to load)'}
                                             </summary>
                                             <div style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-top: 8px;">
-                                                ${flight.telemetry?.stats ? `
-                                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; font-size: 13px;">
-                                                    ${flight.telemetry.stats.maxSpeed != null ? `
-                                                        <div>
-                                                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Max Speed</div>
-                                                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${(flight.telemetry.stats.maxSpeed * 2.23694).toFixed(1)} mph</div>
-                                                            <div style="color: #999; font-size: 11px;">${flight.telemetry.stats.maxSpeed.toFixed(1)} m/s</div>
-                                                        </div>
-                                                    ` : ''}
-                                                    ${flight.telemetry.stats.avgSpeed != null ? `
-                                                        <div>
-                                                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Avg Speed</div>
-                                                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${(flight.telemetry.stats.avgSpeed * 2.23694).toFixed(1)} mph</div>
-                                                            <div style="color: #999; font-size: 11px;">${flight.telemetry.stats.avgSpeed.toFixed(1)} m/s</div>
-                                                        </div>
-                                                    ` : ''}
-                                                    ${flight.telemetry.stats.maxAltitude != null ? `
-                                                        <div>
-                                                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Max Altitude</div>
-                                                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${(flight.telemetry.stats.maxAltitude * 3.28084).toFixed(0)} ft</div>
-                                                            <div style="color: #999; font-size: 11px;">${flight.telemetry.stats.maxAltitude.toFixed(1)} m</div>
-                                                        </div>
-                                                    ` : ''}
-                                                    ${flight.telemetry.stats.maxHeight != null ? `
-                                                        <div>
-                                                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Max Height AGL</div>
-                                                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${(flight.telemetry.stats.maxHeight * 3.28084).toFixed(0)} ft</div>
-                                                            <div style="color: #999; font-size: 11px;">${flight.telemetry.stats.maxHeight.toFixed(1)} m</div>
-                                                        </div>
-                                                    ` : ''}
-                                                    ${flight.telemetry.stats.maxWindSpeed != null ? `
-                                                        <div>
-                                                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Max Wind</div>
-                                                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${(flight.telemetry.stats.maxWindSpeed * 2.23694).toFixed(1)} mph</div>
-                                                            <div style="color: #999; font-size: 11px;">${flight.telemetry.stats.maxWindSpeed.toFixed(1)} m/s</div>
-                                                        </div>
-                                                    ` : ''}
-                                                    ${flight.telemetry.stats.batteryUsed != null ? `
-                                                        <div>
-                                                            <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Battery Used</div>
-                                                            <div style="font-weight: 700; color: #1e3c72; font-size: 16px;">${flight.telemetry.stats.batteryUsed.toFixed(0)}%</div>
-                                                            <div style="color: #999; font-size: 11px;">${flight.telemetry.stats.startBattery?.toFixed(0)}% → ${flight.telemetry.stats.endBattery?.toFixed(0)}%</div>
-                                                        </div>
-                                                    ` : ''}
-                                                </div>
-                                                ` : `
+                                                ${flight.telemetry?.stats ? renderAllTelemetryStats(flight.telemetry.stats) : `
                                                 <div style="text-align: center; padding: 20px; color: #666;">
                                                     <div class="telemetry-loading-${flight.id}" style="display: none;">
                                                         <span class="spinner"></span> Loading telemetry data...
