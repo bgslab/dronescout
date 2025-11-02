@@ -7,7 +7,7 @@ const SKYDIO_API_BASE = 'https://api.skydio.com';
 const GOOGLE_STREETVIEW_BASE = 'https://maps.googleapis.com/maps/api/streetview';
 const GOOGLE_PLACES_BASE = 'https://maps.googleapis.com/maps/api/place';
 const OPENWEATHER_API_BASE = 'https://api.openweathermap.org/data/2.5';
-const FOURSQUARE_API_BASE = 'https://api.foursquare.com/v3';
+const FOURSQUARE_API_BASE = 'https://places-api.foursquare.com';
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -1208,7 +1208,8 @@ async function handleFoursquareDiscover(lat, lon, radiusMeters, apiKey) {
       try {
         const response = await fetch(searchUrl, {
           headers: {
-            'Authorization': apiKey,
+            'Authorization': `Bearer ${apiKey}`,
+            'X-Places-Api-Version': '2025-06-17',
             'Accept': 'application/json'
           }
         });
@@ -1241,11 +1242,11 @@ async function handleFoursquareDiscover(lat, lon, radiusMeters, apiKey) {
       });
     }
 
-    // Deduplicate by fsq_id
+    // Deduplicate by fsq_place_id
     const seen = new Set();
     const uniquePlaces = allPlaces.filter(place => {
-      if (seen.has(place.fsq_id)) return false;
-      seen.add(place.fsq_id);
+      if (seen.has(place.fsq_place_id)) return false;
+      seen.add(place.fsq_place_id);
       return true;
     });
 
@@ -1256,16 +1257,24 @@ async function handleFoursquareDiscover(lat, lon, radiusMeters, apiKey) {
       uniquePlaces.slice(0, 20).map(async (place) => {
         try {
           // Fetch photos
-          const photosUrl = `${FOURSQUARE_API_BASE}/places/${place.fsq_id}/photos?limit=5`;
+          const photosUrl = `${FOURSQUARE_API_BASE}/places/${place.fsq_place_id}/photos?limit=5`;
           const photosResponse = await fetch(photosUrl, {
-            headers: { 'Authorization': apiKey }
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'X-Places-Api-Version': '2025-06-17',
+              'Accept': 'application/json'
+            }
           });
           const photosData = photosResponse.ok ? await photosResponse.json() : [];
 
           // Fetch tips
-          const tipsUrl = `${FOURSQUARE_API_BASE}/places/${place.fsq_id}/tips?limit=5&sort=POPULAR`;
+          const tipsUrl = `${FOURSQUARE_API_BASE}/places/${place.fsq_place_id}/tips?limit=5&sort=POPULAR`;
           const tipsResponse = await fetch(tipsUrl, {
-            headers: { 'Authorization': apiKey }
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'X-Places-Api-Version': '2025-06-17',
+              'Accept': 'application/json'
+            }
           });
           const tipsData = tipsResponse.ok ? await tipsResponse.json() : [];
 
@@ -1290,20 +1299,19 @@ async function handleFoursquareDiscover(lat, lon, radiusMeters, apiKey) {
 
     // Format for DroneScout
     const formattedPlaces = enrichedPlaces.map(place => ({
-      fsq_id: place.fsq_id,
+      fsq_id: place.fsq_place_id,
       name: place.name,
-      lat: place.geocodes?.main?.latitude || place.geocodes?.roof?.latitude,
-      lng: place.geocodes?.main?.longitude || place.geocodes?.roof?.longitude,
+      lat: place.latitude,
+      lng: place.longitude,
       categories: place.categories?.map(c => c.name) || [],
+      primaryCategory: place.categories?.[0]?.name || 'Place',
       distance: place.distance,
       popularity: place.popularity,
       rating: place.rating,
-      photos: (place.photos || []).map(p => ({
-        url: `${p.prefix}original${p.suffix}`,
-        width: p.width,
-        height: p.height
-      })),
-      tips: (place.tips || []).map(t => t.text),
+      photoUrl: (place.photos && place.photos.length > 0) ?
+        `${place.photos[0].prefix}original${place.photos[0].suffix}` :
+        null,
+      tips: (place.tips || []).map(t => ({ text: t.text })),
       droneScore: place.droneScore,
       description: generateFoursquareDescription(place)
     }));
