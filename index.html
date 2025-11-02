@@ -1665,9 +1665,18 @@
                     }).addTo(state.map);
 
                     // Automatically fit map to show entire flight path
-                    state.map.fitBounds(flightPath.getBounds(), { padding: [50, 50] });
+                    // CRITICAL: Disable animation to prevent tile request cancellation
+                    state.map.fitBounds(flightPath.getBounds(), {
+                        padding: [50, 50],
+                        animate: false  // No zoom animation = no tile cancellation
+                    });
 
                     console.log('Flight path added, map fitted to bounds');
+
+                    // Force tile loading after bounds are set
+                    state.map.invalidateSize();
+
+                    console.log('Map invalidated, tiles should load now');
 
                     // Add markers for takeoff and landing
                     const startPoint = pathCoords[0];
