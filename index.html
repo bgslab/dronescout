@@ -1706,8 +1706,10 @@
                         state.map.invalidateSize();
                     }, 100);
 
+                    // SUCCESS! Don't call render() here - it would destroy the map we just created
+                    // Just update the message element directly
                     state.syncMessage = { type: 'success', text: `Flight path loaded (${details.telemetry.pointCount} points)` };
-                    render();
+                    console.log('✅ Flight path rendering complete - map should be visible');
                 } catch (error) {
                     console.error('Error viewing flight path:', error);
                     state.syncMessage = { type: 'error', text: `Failed to load flight path: ${error.message}` };
