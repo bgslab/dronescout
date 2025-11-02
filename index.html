@@ -1613,6 +1613,9 @@
                     const spotType = determineSpotType(tags);
                     const name = tags.name || `${spotType.name} ${index + 1}`;
 
+                    // Debug: Log OSM tags to see what data is available
+                    console.log(`📍 Spot: ${name}`, 'OSM Tags:', tags);
+
                     // Fetch real image (Street View with Unsplash fallback) AND current weather in parallel
                     const [imageData, weatherData] = await Promise.all([
                         fetchLocationImage(poiLat, poiLng, spotType.category, locationName),
@@ -1737,50 +1740,80 @@
 
                 // Build description from available OSM tags
                 let parts = [];
+                let context = [];
 
-                // Feature type
+                // Primary feature description with more detail
                 if (tags.natural === 'peak') {
                     parts.push(tags.ele ? `Mountain peak at ${tags.ele}m elevation` : 'Mountain peak');
                 } else if (tags.natural === 'beach') {
                     parts.push('Beach area');
+                    if (tags.surface) parts.push(`${tags.surface} surface`);
                 } else if (tags.natural === 'water') {
                     const waterType = tags.water || 'water';
-                    parts.push(`${waterType.charAt(0).toUpperCase() + waterType.slice(1)} feature`);
+                    parts.push(`${waterType.charAt(0).toUpperCase() + waterType.slice(1)}`);
                 } else if (tags.tourism === 'viewpoint') {
-                    parts.push(tags.ele ? `Viewpoint at ${tags.ele}m elevation` : 'Scenic viewpoint');
+                    // More specific viewpoint descriptions
+                    if (tags.man_made === 'tower' || tags.building === 'yes') {
+                        parts.push('Observation deck');
+                    } else {
+                        parts.push('Scenic viewpoint');
+                    }
+                    if (tags.ele) parts.push(`at ${tags.ele}m elevation`);
+                    if (tags.direction) parts.push(`facing ${tags.direction}`);
                 } else if (tags.leisure === 'park') {
-                    parts.push('Public park');
+                    if (tags['park:type']) {
+                        parts.push(`${tags['park:type']} park`.replace(/_/g, ' '));
+                    } else {
+                        parts.push('Public park');
+                    }
                 } else if (tags.leisure === 'nature_reserve') {
                     parts.push('Nature reserve');
                 } else if (tags.landuse === 'forest') {
-                    parts.push('Forest area');
-                } else if (tags.man_made === 'tower' && tags['tower:type'] === 'observation') {
-                    parts.push('Observation tower');
-                }
-
-                // Add location context if available
-                if (tags.operator) {
-                    parts.push(`managed by ${tags.operator}`);
-                }
-
-                // Add notable info
-                if (tags.wikipedia || tags.wikidata) {
-                    parts.push('notable landmark');
-                }
-
-                // Add access info
-                if (tags.access === 'private') {
-                    parts.push('(private property - verify permission)');
-                } else if (tags.access === 'permissive') {
-                    parts.push('(permission required)');
-                }
-
-                // If we have parts, join them
-                if (parts.length > 0) {
-                    let desc = parts[0];
-                    if (parts.length > 1) {
-                        desc += ', ' + parts.slice(1).join(', ');
+                    parts.push(tags.leaf_type ? `${tags.leaf_type} forest` : 'Forest area');
+                } else if (tags.man_made === 'tower') {
+                    if (tags['tower:type'] === 'observation') {
+                        parts.push('Observation tower');
+                    } else {
+                        parts.push('Tower');
                     }
+                    if (tags.height) parts.push(`${tags.height} tall`);
+                } else if (tags.tourism === 'attraction') {
+                    parts.push('Tourist attraction');
+                } else if (tags.building) {
+                    if (tags.building === 'commercial') parts.push('Commercial building');
+                    else if (tags.building !== 'yes') parts.push(tags.building);
+                }
+
+                // Add contextual information
+                if (tags['addr:city']) context.push(`in ${tags['addr:city']}`);
+                if (tags.operator) context.push(`operated by ${tags.operator}`);
+                if (tags.wikipedia || tags.wikidata) context.push('notable landmark');
+                if (tags.heritage) context.push('historic site');
+                if (tags.wheelchair === 'yes') context.push('accessible');
+
+                // Add access warnings
+                if (tags.access === 'private') {
+                    context.push('⚠️ private property');
+                } else if (tags.access === 'permissive') {
+                    context.push('permission required');
+                } else if (tags.fee === 'yes') {
+                    context.push('admission fee');
+                }
+
+                // Build final description
+                let desc = '';
+                if (parts.length > 0) {
+                    desc = parts.join(' ');
+                    if (context.length > 0) {
+                        desc += ` (${context.join(', ')})`;
+                    }
+                    desc += '. ' + getGenericDroneAdvice(tags, spotType);
+                    return desc;
+                }
+
+                // If no specific parts, at least include context
+                if (context.length > 0) {
+                    desc = context[0].charAt(0).toUpperCase() + context.slice(0).join(', ');
                     desc += '. ' + getGenericDroneAdvice(tags, spotType);
                     return desc;
                 }
