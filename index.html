@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout v7.1 - Flight Path Visualization</title>
+    <title>DroneScout V9.0 - Smart Spot Discovery</title>
     <!-- Build: 2025-10-31-23:50 UTC - FORCE RELOAD -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -824,11 +824,8 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout v7.1</h1>
-            <p>Plan • Map • Route • Assess • Fly • Sync • Analyze</p>
-            <div style="background: #ffeb3b; color: #000; padding: 5px 10px; border-radius: 4px; font-size: 12px; margin-top: 10px; font-weight: bold;">
-                ⚠️ BUILD: 2025-10-31 23:50 UTC - If you see this, cache cleared! If not, you're viewing old version.
-            </div>
+            <h1>🚁 DroneScout V9.0</h1>
+            <p>Plan • Discover • Map • Assess • Fly • Sync • Analyze</p>
         </div>
 
         <div class="nav-tabs">
@@ -2363,50 +2360,6 @@
                 return html;
             }
 
-            // TEST FUNCTION: Load map with known-good coordinates
-            window.testMapWithGoodData = function() {
-                console.log('🧪 Testing map with known-good Chicago coordinates...');
-
-                // Clean up old map if exists
-                if (state.map) {
-                    state.map.remove();
-                    state.map = null;
-                }
-
-                // Create map centered on Chicago
-                state.map = L.map('mapContainer').setView([41.8781, -87.6298], 13);
-
-                // Add OpenStreetMap tiles
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '&copy; OpenStreetMap'
-                }).addTo(state.map);
-
-                // Create a test flight path around Chicago Loop
-                const testPath = [
-                    [41.8781, -87.6298],  // Start: Chicago
-                    [41.8800, -87.6250],
-                    [41.8850, -87.6200],
-                    [41.8900, -87.6250],
-                    [41.8900, -87.6350],
-                    [41.8850, -87.6400],
-                    [41.8800, -87.6350],
-                    [41.8781, -87.6298]   // End: Back to start
-                ];
-
-                const flightPath = L.polyline(testPath, {
-                    color: '#2563eb',
-                    weight: 3,
-                    opacity: 0.8
-                }).addTo(state.map);
-
-                state.map.fitBounds(flightPath.getBounds(), { padding: [50, 50] });
-
-                console.log('✅ TEST FLIGHT LOADED - Chicago Loop with known-good coordinates');
-                console.log('Map center:', state.map.getCenter());
-                console.log('Map zoom:', state.map.getZoom());
-                alert('🧪 Test flight loaded!\n\nIf you see map tiles, the code works.\nIf still gray, there\'s a code issue.');
-            };
-
             // V6: Map initialization and management
             function initMap() {
                 // Check if Leaflet is loaded
@@ -2777,27 +2730,6 @@
                     <!-- Interactive Map - Always show for V7.1 flight paths -->
                     <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 20px;">
                         <div id="mapContainer" class="map-container" style="height: 400px; width: 100%;"></div>
-                    </div>
-
-                    <!-- Debug buttons for map diagnostics and testing -->
-                    <div style="margin-bottom: 20px; text-align: center; display: flex; gap: 10px; justify-content: center;">
-                        <button onclick="testMapWithGoodData()" style="padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
-                            🧪 Test with Good Data
-                        </button>
-
-                        <button onclick="
-                            if (window.mapDiagnostics) {
-                                const text = JSON.stringify(window.mapDiagnostics, null, 2);
-                                navigator.clipboard.writeText(text);
-                                alert('📋 Diagnostics copied to clipboard!\\n\\nPaste into chat to share with support.');
-                                console.log('=== COPIED DIAGNOSTICS ===');
-                                console.log(text);
-                            } else {
-                                alert('No diagnostics available yet. Click \"View Flight Path\" first.');
-                            }
-                        " style="padding: 8px 16px; background: #6366f1; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">
-                            📋 Copy Map Diagnostics
-                        </button>
                     </div>
 
                     ${state.spots.length > 0 ? `
