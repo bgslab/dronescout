@@ -1,7 +1,7 @@
 # DroneScout - Project Context
 **Last Updated:** November 2, 2025
-**Current Version:** V8.0
-**Status:** ✅ Production Ready
+**Current Version:** V9.0
+**Status:** ✅ V9.0 Complete - Real Photos + Live Weather + Spot Discovery
 
 ---
 
@@ -26,22 +26,33 @@
 - **Mapping:** Leaflet.js 1.9.4
 - **Storage:** localStorage (offline-capable)
 - **Backend:** Cloudflare Workers (secure API proxy)
-- **APIs:** Skydio Cloud v0, OpenStreetMap (Nominatim), Unsplash
+- **APIs:**
+  - Skydio Cloud v0 (flight data)
+  - Google Street View Static API (real photos) ✨ NEW in V9
+  - OpenWeather API (live weather + flying conditions) ✨ NEW in V9
+  - Overpass API / OpenStreetMap (spot discovery) ✨ ENHANCED in V9
+  - OpenStreetMap Nominatim (geocoding)
+  - Unsplash (fallback images)
 - **Deployment:** GitHub Pages (https://bgslab.github.io/dronescout/)
 
 ### File Structure
 ```
 dronescout/
-├── index.html              # Main app (SPA with all UI/logic)
-├── cloudflare-worker.js    # Backend proxy for Skydio API
-├── .sessions/              # Session management & documentation
-│   ├── README.md           # Session organization guide
-│   ├── CONTEXT.md          # This file - project context
-│   ├── SESSION_V1-V7_SUMMARY.md   # Gray map tiles debugging
-│   ├── SESSION_V8_SUMMARY.md      # Telemetry + inline maps
-│   └── V9_TECHNICAL_STRATEGY.md   # Next version planning
-├── README.md               # Project overview
-└── [legacy docs]           # V1-V7 handoff docs (archived)
+├── index.html                       # Main app (SPA with all UI/logic)
+├── cloudflare-worker.js             # Backend proxy (Skydio + Google + Weather APIs)
+├── streetview-test.html             # Street View integration test page
+├── spot-discovery-test.html         # Street View + Weather test page
+├── full-spot-discovery-test.html    # Complete spot discovery demo ⭐
+├── .sessions/                       # Session management & documentation
+│   ├── README.md                    # Session organization guide
+│   ├── CONTEXT.md                   # This file - project context
+│   ├── SESSION_V1-V7_SUMMARY.md    # Gray map tiles debugging
+│   ├── SESSION_V8_SUMMARY.md       # Telemetry + inline maps
+│   ├── V9_TECHNICAL_STRATEGY.md    # V9.0 planning document
+│   ├── SESSION_V9_PHASE2_STREETVIEW.md  # Street View integration
+│   └── SESSION_V9_PHASE3_WEATHER_SPOTS.md  # Weather + Full V9.0 ✨ NEW
+├── README.md                        # Project overview
+└── [legacy docs]                    # V1-V7 handoff docs (archived)
 ```
 
 ### Data Flow
@@ -301,11 +312,57 @@ Must calculate magnitude: `speed = sqrt(vx² + vy² + vz²)`
 13. `584640d` - DOCS: Complete V8.0 session summary
 14. `3ad688c` - DOCS: Add session management system
 
-### V9.0: Trip Planner Transformation (PLANNED)
-**Focus:** Location-based spot discovery engine
-**Strategy:** `.sessions/V9_TECHNICAL_STRATEGY.md`
-**Vision:** Real photos, weather, airspace, community flight paths
-**Status:** Technical review complete, awaiting user decisions
+### V9.0: Trip Planner Transformation ✅ COMPLETE
+**Focus:** Location-based spot discovery engine with real photos and live weather
+**Documentation:**
+- Strategy: `.sessions/V9_TECHNICAL_STRATEGY.md`
+- Phase 2 (Street View): `.sessions/SESSION_V9_PHASE2_STREETVIEW.md`
+- Phase 3 (Weather + Complete): `.sessions/SESSION_V9_PHASE3_WEATHER_SPOTS.md`
+
+**Status:**
+- ✅ **Phase 1:** Technical strategy & API planning
+- ✅ **Phase 2:** Google Street View API integration
+- ✅ **Phase 3:** OpenWeather API + Full Spot Discovery **COMPLETE!**
+- ⏳ **Phase 4:** Airspace classification (V10.0 - awaiting Aloft API approval)
+- ⏳ **Phase 5:** Community flight paths (V10.0)
+
+**V9.0 Complete Feature Set:**
+1. **Real Spot Discovery**
+   - Overpass API finds actual viewpoints, parks, beaches, peaks
+   - Any location worldwide
+   - Sorted by distance from search center
+
+2. **Actual Location Photos**
+   - Google Street View images (when available)
+   - Automatic Unsplash fallback
+   - Photo source badges and metadata
+
+3. **Live Weather Data**
+   - OpenWeather API: temp, wind, visibility, conditions
+   - Fetched in real-time for each spot
+   - Updates every search
+
+4. **Drone Flying Safety Assessment**
+   - Automatic risk evaluation (Low/Medium/High)
+   - Wind, visibility, precipitation analysis
+   - Specific warnings and recommendations
+   - FAA VLOS compliance checking
+
+5. **Beautiful UI/UX**
+   - Professional weather cards
+   - Flying status badges (Good/Caution/Do Not Fly)
+   - Responsive design
+   - Real-time data display
+
+**API Keys Secured:**
+- Google Maps API: `AIzaSyDzWCokRTf0EIwEJ_fCrpLud-F-5JiRfYY`
+- OpenWeather API: `00d5cc9b2a976560920093ea685c2b09`
+- Both stored as Cloudflare Worker secrets
+
+**Test Pages:**
+- `streetview-test.html` - Street View only
+- `spot-discovery-test.html` - Street View + Weather
+- `full-spot-discovery-test.html` - Complete end-to-end demo ⭐
 
 ---
 
@@ -340,6 +397,12 @@ Must calculate magnitude: `speed = sqrt(vx² + vy² + vz²)`
 - **File:** `index.html`
 - **Lines:** 2071-2120 (renderAllTelemetryStats function)
 - **Output:** 6 metrics with dual units
+
+### Street View Integration (V9.0) ✨ NEW
+- **File:** `index.html`
+- **Lines:** 1080-1181 (fetchLocationImage + checkStreetViewAvailability)
+- **Worker:** `cloudflare-worker.js` lines 537-633
+- **Features:** Real photos with Unsplash fallback, metadata display
 
 ---
 

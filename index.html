@@ -1077,6 +1077,184 @@
                 return fallbackImages[category] || fallbackImages.landscape;
             }
 
+            // Google Street View API functions (via Cloudflare Worker proxy)
+            /**
+             * Fetch a Street View image for a location
+             * Falls back to Unsplash if no Street View available
+             * @param {number} lat - Latitude
+             * @param {number} lon - Longitude
+             * @param {string} category - Image category for Unsplash fallback
+             * @param {string} locationName - Location name for Unsplash fallback
+             * @returns {Promise<{imageUrl: string, source: string, metadata: object}>}
+             */
+            async function fetchLocationImage(lat, lon, category = 'landscape', locationName = '') {
+                try {
+                    // Get worker URL from settings
+                    const workerUrl = state.syncSettings?.workerUrl;
+                    if (!workerUrl) {
+                        console.warn('Worker URL not configured, using Unsplash fallback');
+                        const imageUrl = await fetchUnsplashImage(category, locationName);
+                        return {
+                            imageUrl,
+                            source: 'unsplash',
+                            metadata: {}
+                        };
+                    }
+
+                    // Try Google Street View first
+                    const streetViewUrl = `${workerUrl}/api/streetview/image?lat=${lat}&lon=${lon}&size=600x400`;
+                    const response = await fetch(streetViewUrl);
+
+                    if (!response.ok) {
+                        console.warn('Street View API error, using Unsplash fallback');
+                        const imageUrl = await fetchUnsplashImage(category, locationName);
+                        return {
+                            imageUrl,
+                            source: 'unsplash',
+                            metadata: {}
+                        };
+                    }
+
+                    const data = await response.json();
+
+                    if (data.success && data.hasStreetView) {
+                        console.log('Using Street View image');
+                        return {
+                            imageUrl: data.imageUrl,
+                            source: 'streetview',
+                            metadata: data.metadata || {}
+                        };
+                    } else {
+                        // No Street View available, fall back to Unsplash
+                        console.log('No Street View available, using Unsplash fallback');
+                        const imageUrl = await fetchUnsplashImage(category, locationName);
+                        return {
+                            imageUrl,
+                            source: 'unsplash',
+                            metadata: {}
+                        };
+                    }
+                } catch (error) {
+                    console.error('fetchLocationImage error:', error);
+                    const imageUrl = await fetchUnsplashImage(category, locationName);
+                    return {
+                        imageUrl,
+                        source: 'unsplash',
+                        metadata: {}
+                    };
+                }
+            }
+
+            /**
+             * Check if Street View is available at a location
+             * @param {number} lat - Latitude
+             * @param {number} lon - Longitude
+             * @returns {Promise<{hasStreetView: boolean, metadata: object}>}
+             */
+            async function checkStreetViewAvailability(lat, lon) {
+                try {
+                    const workerUrl = state.syncSettings?.workerUrl;
+                    if (!workerUrl) {
+                        return { hasStreetView: false, metadata: {} };
+                    }
+
+                    const metadataUrl = `${workerUrl}/api/streetview/metadata?lat=${lat}&lon=${lon}`;
+                    const response = await fetch(metadataUrl);
+
+                    if (!response.ok) {
+                        return { hasStreetView: false, metadata: {} };
+                    }
+
+                    const data = await response.json();
+                    return {
+                        hasStreetView: data.hasStreetView || false,
+                        metadata: data.location ? {
+                            location: data.location,
+                            date: data.date,
+                            copyright: data.copyright
+                        } : {}
+                    };
+                } catch (error) {
+                    console.error('checkStreetViewAvailability error:', error);
+                    return { hasStreetView: false, metadata: {} };
+                }
+            }
+
+            // OpenWeather API functions (via Cloudflare Worker proxy)
+            /**
+             * Fetch current weather at a location
+             * @param {number} lat - Latitude
+             * @param {number} lon - Longitude
+             * @param {string} units - 'imperial' or 'metric'
+             * @returns {Promise<{weather: object, error: string}>}
+             */
+            async function fetchCurrentWeather(lat, lon, units = 'imperial') {
+                try {
+                    const workerUrl = state.syncSettings?.workerUrl;
+                    if (!workerUrl) {
+                        console.warn('Worker URL not configured, weather unavailable');
+                        return { weather: null, error: 'Worker URL not configured' };
+                    }
+
+                    const weatherUrl = `${workerUrl}/api/weather/current?lat=${lat}&lon=${lon}&units=${units}`;
+                    const response = await fetch(weatherUrl);
+
+                    if (!response.ok) {
+                        console.warn('Weather API error');
+                        return { weather: null, error: 'Weather API error' };
+                    }
+
+                    const data = await response.json();
+
+                    if (data.success && data.weather) {
+                        console.log('Weather data fetched successfully');
+                        return {
+                            weather: data.weather,
+                            error: null
+                        };
+                    } else {
+                        return {
+                            weather: null,
+                            error: data.error || 'Unknown weather error'
+                        };
+                    }
+                } catch (error) {
+                    console.error('fetchCurrentWeather error:', error);
+                    return {
+                        weather: null,
+                        error: error.message
+                    };
+                }
+            }
+
+            /**
+             * Format weather data for display
+             * @param {object} weather - Weather object from fetchCurrentWeather
+             * @returns {string} Formatted weather string
+             */
+            function formatWeatherDisplay(weather) {
+                if (!weather) return 'Weather unavailable';
+
+                const { temp, tempUnit, conditions, windSpeed, windSpeedUnit, visibility, visibilityUnit } = weather;
+                return `${temp}${tempUnit}, ${conditions}, Wind ${windSpeed}${windSpeedUnit}, Vis ${visibility}${visibilityUnit}`;
+            }
+
+            /**
+             * Get weather badge HTML with risk color
+             * @param {object} weather - Weather object
+             * @returns {string} HTML badge
+             */
+            function getWeatherBadge(weather) {
+                if (!weather || !weather.flyingConditions) {
+                    return '<span class="weather-badge weather-unknown">Weather Unknown</span>';
+                }
+
+                const { risk, recommendation } = weather.flyingConditions;
+                const riskClass = risk === 'low' ? 'weather-good' : risk === 'medium' ? 'weather-caution' : 'weather-bad';
+
+                return `<span class="weather-badge ${riskClass}">${recommendation}</span>`;
+            }
+
             // Nominatim Geocoding API functions
             async function geocodeLocation(locationQuery) {
                 try {
@@ -1142,13 +1320,16 @@
                 }
             }
 
-            // Process POIs into spot format (async to fetch real images)
+            // Process POIs into spot format (async to fetch real images + weather)
             async function processPOIs(elements, centerLat, centerLng, locationName = '') {
                 const spots = [];
 
-                // Process each element and fetch images
-                for (let index = 0; index < elements.length; index++) {
-                    const element = elements[index];
+                // Limit to first 15 spots to avoid excessive API calls
+                const limitedElements = elements.slice(0, 15);
+
+                // Process each element and fetch images + weather
+                for (let index = 0; index < limitedElements.length; index++) {
+                    const element = limitedElements[index];
 
                     // Get coordinates (handle nodes and ways differently)
                     let poiLat, poiLng;
@@ -1170,15 +1351,20 @@
                     const spotType = determineSpotType(tags);
                     const name = tags.name || `${spotType.name} ${index + 1}`;
 
-                    // Fetch real image from Unsplash with location context
-                    const imageUrl = await fetchUnsplashImage(spotType.category, locationName, name);
+                    // Fetch real image (Street View with Unsplash fallback) AND current weather in parallel
+                    const [imageData, weatherData] = await Promise.all([
+                        fetchLocationImage(poiLat, poiLng, spotType.category, locationName),
+                        fetchCurrentWeather(poiLat, poiLng, 'imperial')
+                    ]);
 
                     spots.push({
                         id: element.id || Date.now() + index,
                         name: name,
                         description: generateDescription(tags, spotType),
                         coordinates: { lat: poiLat, lng: poiLng },
-                        imageUrl: imageUrl,
+                        imageUrl: imageData.imageUrl,
+                        imageSource: imageData.source, // 'streetview' or 'unsplash'
+                        imageMetadata: imageData.metadata || {},
                         flightInstructions: generateFlightInstructions(spotType, tags),
                         bestTime: spotType.bestTime,
                         x10Advantage: "X10's advanced autonomy and Nightsense capability enable safe navigation and stunning shots in varied lighting conditions.",
@@ -1195,7 +1381,16 @@
                             { authority: "FAA Part 107", rule: "Visual line of sight required (unless BVLOS waiver)", compliant: true },
                             { authority: "Local Authority", rule: "Verify local drone regulations before flight", compliant: true }
                         ],
-                        weatherConditions: {
+                        // Real weather data from OpenWeather API
+                        weather: weatherData.weather,
+                        weatherError: weatherData.error,
+                        // Legacy weatherConditions for backwards compatibility
+                        weatherConditions: weatherData.weather ? {
+                            wind: `${weatherData.weather.windSpeed} ${weatherData.weather.windSpeedUnit}`,
+                            visibility: `${weatherData.weather.visibility} ${weatherData.weather.visibilityUnit}`,
+                            temp: `${weatherData.weather.temp}${weatherData.weather.tempUnit}`,
+                            conditions: weatherData.weather.conditions
+                        } : {
                             wind: "Check current conditions",
                             visibility: "Check current conditions",
                             temp: "Check current conditions",

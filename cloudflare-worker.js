@@ -1,9 +1,11 @@
 /**
- * DroneScout - Cloudflare Worker Proxy for Skydio Cloud API
+ * DroneScout - Cloudflare Worker Proxy for Skydio Cloud API + External APIs
  * Handles authentication and CORS for browser-based app
  */
 
 const SKYDIO_API_BASE = 'https://api.skydio.com';
+const GOOGLE_STREETVIEW_BASE = 'https://maps.googleapis.com/maps/api/streetview';
+const OPENWEATHER_API_BASE = 'https://api.openweathermap.org/data/2.5';
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -27,23 +29,61 @@ export default {
           tokenExists: !!env.SKYDIO_API_TOKEN,
           tokenLength: env.SKYDIO_API_TOKEN ? env.SKYDIO_API_TOKEN.length : 0,
           tokenPrefix: env.SKYDIO_API_TOKEN ? env.SKYDIO_API_TOKEN.substring(0, 8) + '...' : 'N/A',
-          apiBase: SKYDIO_API_BASE
+          apiBase: SKYDIO_API_BASE,
+          googleApiExists: !!env.GOOGLE_MAPS_API_KEY,
+          openweatherApiExists: !!env.OPENWEATHER_API_KEY
         });
       }
 
-      // Route requests
+      // Route requests - Skydio API
       if (path === '/sync-flights' && request.method === 'POST') {
         return await handleSyncFlights(env.SKYDIO_API_TOKEN);
       }
-      
+
       const flightDetailMatch = path.match(/^\/flight\/([^\/]+)\/details$/);
       if (flightDetailMatch && request.method === 'GET') {
         return await handleFlightDetails(flightDetailMatch[1], env.SKYDIO_API_TOKEN);
       }
-      
+
       const flightMediaMatch = path.match(/^\/flight\/([^\/]+)\/media$/);
       if (flightMediaMatch && request.method === 'GET') {
         return await handleFlightMedia(flightMediaMatch[1], env.SKYDIO_API_TOKEN);
+      }
+
+      // Route requests - Google Street View API
+      if (path === '/api/streetview/metadata' && request.method === 'GET') {
+        const lat = url.searchParams.get('lat');
+        const lon = url.searchParams.get('lon');
+        if (!lat || !lon) {
+          return jsonResponse({ error: 'Missing lat or lon parameter' }, 400);
+        }
+        return await handleStreetViewMetadata(lat, lon, env.GOOGLE_MAPS_API_KEY);
+      }
+
+      if (path === '/api/streetview/image' && request.method === 'GET') {
+        const lat = url.searchParams.get('lat');
+        const lon = url.searchParams.get('lon');
+        const size = url.searchParams.get('size') || '600x400';
+        const heading = url.searchParams.get('heading') || '';
+        const fov = url.searchParams.get('fov') || '90';
+        const pitch = url.searchParams.get('pitch') || '0';
+
+        if (!lat || !lon) {
+          return jsonResponse({ error: 'Missing lat or lon parameter' }, 400);
+        }
+        return await handleStreetViewImage(lat, lon, size, heading, fov, pitch, env.GOOGLE_MAPS_API_KEY);
+      }
+
+      // Route requests - OpenWeather API
+      if (path === '/api/weather/current' && request.method === 'GET') {
+        const lat = url.searchParams.get('lat');
+        const lon = url.searchParams.get('lon');
+        const units = url.searchParams.get('units') || 'imperial'; // imperial or metric
+
+        if (!lat || !lon) {
+          return jsonResponse({ error: 'Missing lat or lon parameter' }, 400);
+        }
+        return await handleCurrentWeather(lat, lon, units, env.OPENWEATHER_API_KEY);
       }
 
       return jsonResponse({ error: 'Not found' }, 404);
@@ -506,6 +546,264 @@ async function handleFlightMedia(flightId, apiToken) {
     count: media.length,
     media: media,
   });
+}
+
+/**
+ * GET /api/streetview/metadata
+ * Checks if Google Street View imagery exists at a location
+ * Returns: metadata including status, location, and date
+ */
+async function handleStreetViewMetadata(lat, lon, apiKey) {
+  if (!apiKey) {
+    return jsonResponse({
+      error: 'Google Maps API key not configured',
+      hasStreetView: false
+    }, 500);
+  }
+
+  const metadataUrl = `${GOOGLE_STREETVIEW_BASE}/metadata?location=${lat},${lon}&key=${apiKey}`;
+
+  try {
+    const response = await fetch(metadataUrl);
+    const data = await response.json();
+
+    return jsonResponse({
+      success: true,
+      hasStreetView: data.status === 'OK',
+      status: data.status,
+      location: data.location,
+      date: data.date,
+      copyright: data.copyright,
+      panoId: data.pano_id,
+    });
+  } catch (error) {
+    console.error('Street View metadata error:', error);
+    return jsonResponse({
+      error: 'Failed to fetch Street View metadata',
+      hasStreetView: false,
+      details: error.message
+    }, 500);
+  }
+}
+
+/**
+ * GET /api/streetview/image
+ * Returns a Google Street View Static API image URL
+ * Parameters: lat, lon, size (optional), heading (optional), fov (optional), pitch (optional)
+ * Returns: Image URL or error if not available
+ */
+async function handleStreetViewImage(lat, lon, size, heading, fov, pitch, apiKey) {
+  if (!apiKey) {
+    return jsonResponse({
+      error: 'Google Maps API key not configured',
+      imageUrl: null
+    }, 500);
+  }
+
+  // First check if Street View exists at this location
+  const metadataUrl = `${GOOGLE_STREETVIEW_BASE}/metadata?location=${lat},${lon}&key=${apiKey}`;
+
+  try {
+    const metadataResponse = await fetch(metadataUrl);
+    const metadata = await metadataResponse.json();
+
+    if (metadata.status !== 'OK') {
+      return jsonResponse({
+        success: false,
+        hasStreetView: false,
+        status: metadata.status,
+        imageUrl: null,
+        message: 'No Street View imagery available at this location'
+      });
+    }
+
+    // Build Street View image URL
+    let imageUrl = `${GOOGLE_STREETVIEW_BASE}?size=${size}&location=${lat},${lon}&key=${apiKey}`;
+
+    // Add optional parameters
+    if (heading) imageUrl += `&heading=${heading}`;
+    if (fov) imageUrl += `&fov=${fov}`;
+    if (pitch) imageUrl += `&pitch=${pitch}`;
+
+    return jsonResponse({
+      success: true,
+      hasStreetView: true,
+      imageUrl: imageUrl,
+      metadata: {
+        location: metadata.location,
+        date: metadata.date,
+        copyright: metadata.copyright,
+        panoId: metadata.pano_id,
+      }
+    });
+  } catch (error) {
+    console.error('Street View image error:', error);
+    return jsonResponse({
+      error: 'Failed to generate Street View image URL',
+      imageUrl: null,
+      details: error.message
+    }, 500);
+  }
+}
+
+/**
+ * GET /api/weather/current
+ * Fetches current weather conditions at a location
+ * Parameters: lat, lon, units (optional: 'imperial' or 'metric')
+ * Returns: Weather data including temp, conditions, wind, visibility
+ */
+async function handleCurrentWeather(lat, lon, units, apiKey) {
+  if (!apiKey) {
+    return jsonResponse({
+      error: 'OpenWeather API key not configured',
+      weather: null
+    }, 500);
+  }
+
+  const weatherUrl = `${OPENWEATHER_API_BASE}/weather?lat=${lat}&lon=${lon}&units=${units}&appid=${apiKey}`;
+
+  try {
+    const response = await fetch(weatherUrl);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('OpenWeather API error:', errorData);
+      return jsonResponse({
+        error: 'Failed to fetch weather data',
+        weather: null,
+        details: errorData.message || response.statusText
+      }, response.status);
+    }
+
+    const data = await response.json();
+
+    // Parse and format weather data for drone flying assessment
+    const weather = {
+      // Basic conditions
+      temp: Math.round(data.main.temp),
+      tempUnit: units === 'imperial' ? '°F' : '°C',
+      feelsLike: Math.round(data.main.feels_like),
+      conditions: data.weather[0].main, // e.g., "Clear", "Clouds", "Rain"
+      description: data.weather[0].description, // e.g., "clear sky", "scattered clouds"
+      icon: data.weather[0].icon,
+
+      // Wind (critical for drone flying)
+      windSpeed: Math.round(data.wind.speed * 10) / 10,
+      windSpeedUnit: units === 'imperial' ? 'mph' : 'm/s',
+      windDeg: data.wind.deg || 0,
+      windGust: data.wind.gust ? Math.round(data.wind.gust * 10) / 10 : null,
+
+      // Visibility (critical for VLOS requirements)
+      visibility: data.visibility ? Math.round(data.visibility * 0.000621371 * 10) / 10 : null, // meters to miles
+      visibilityUnit: 'mi',
+      visibilityMeters: data.visibility,
+
+      // Other conditions
+      humidity: data.main.humidity,
+      pressure: data.main.pressure,
+      clouds: data.clouds.all, // cloud coverage percentage
+
+      // Location info
+      location: data.name,
+      timezone: data.timezone,
+      sunrise: data.sys.sunrise,
+      sunset: data.sys.sunset,
+
+      // Timestamp
+      timestamp: data.dt,
+      fetchedAt: new Date().toISOString(),
+
+      // Flying conditions assessment
+      flyingConditions: assessFlyingConditions(data, units)
+    };
+
+    return jsonResponse({
+      success: true,
+      weather: weather,
+      raw: data // Include raw data for debugging
+    });
+  } catch (error) {
+    console.error('Weather fetch error:', error);
+    return jsonResponse({
+      error: 'Failed to fetch weather data',
+      weather: null,
+      details: error.message
+    }, 500);
+  }
+}
+
+/**
+ * Assess flying conditions based on weather data
+ * Returns: { safe, risk, warnings[] }
+ */
+function assessFlyingConditions(data, units) {
+  const warnings = [];
+  let risk = 'low'; // low, medium, high
+
+  // Wind speed assessment (critical)
+  const windSpeed = data.wind.speed;
+  const windSpeedMph = units === 'imperial' ? windSpeed : windSpeed * 2.237; // m/s to mph
+
+  if (windSpeedMph > 25) {
+    warnings.push('High winds - unsafe for most drones');
+    risk = 'high';
+  } else if (windSpeedMph > 15) {
+    warnings.push('Moderate winds - experienced pilots only');
+    if (risk !== 'high') risk = 'medium';
+  } else if (windSpeedMph > 10) {
+    warnings.push('Light winds - fly with caution');
+  }
+
+  // Visibility assessment (FAA VLOS requirement: 3 statute miles)
+  const visibilityMiles = data.visibility ? data.visibility * 0.000621371 : 10;
+  if (visibilityMiles < 3) {
+    warnings.push('Low visibility - may not meet VLOS requirements');
+    risk = 'high';
+  } else if (visibilityMiles < 5) {
+    warnings.push('Reduced visibility - maintain close visual contact');
+    if (risk !== 'high') risk = 'medium';
+  }
+
+  // Precipitation
+  if (data.weather[0].main === 'Rain' || data.weather[0].main === 'Snow') {
+    warnings.push('Precipitation - do not fly (moisture damage risk)');
+    risk = 'high';
+  } else if (data.weather[0].main === 'Drizzle') {
+    warnings.push('Light precipitation - not recommended');
+    if (risk !== 'high') risk = 'medium';
+  }
+
+  // Temperature (battery performance)
+  const temp = data.main.temp;
+  const tempF = units === 'imperial' ? temp : (temp * 9/5) + 32;
+
+  if (tempF < 32) {
+    warnings.push('Below freezing - reduced battery life');
+    if (risk !== 'high') risk = 'medium';
+  } else if (tempF > 95) {
+    warnings.push('High temperature - monitor for overheating');
+    if (risk !== 'high') risk = 'medium';
+  }
+
+  // Cloud coverage (affects lighting)
+  if (data.clouds.all > 80) {
+    warnings.push('Heavy cloud cover - reduced lighting');
+  }
+
+  // Determine if safe to fly
+  const safe = risk === 'low' && warnings.length === 0;
+
+  return {
+    safe,
+    risk, // 'low', 'medium', 'high'
+    riskColor: risk === 'low' ? 'green' : risk === 'medium' ? 'yellow' : 'red',
+    warnings,
+    recommendation: safe
+      ? 'Good flying conditions'
+      : risk === 'high'
+        ? 'Do not fly'
+        : 'Fly with caution'
+  };
 }
 
 /**

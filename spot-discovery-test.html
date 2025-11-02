@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DroneScout - Spot Discovery Test (Street View + Weather)</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f7;
+        }
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            margin: 0 0 10px 0;
+            color: #1d1d1f;
+        }
+        .subtitle {
+            color: #6e6e73;
+            font-size: 16px;
+        }
+        .test-section {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .spots-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 24px;
+            margin-top: 24px;
+        }
+        .spot-card {
+            border: 1px solid #d2d2d7;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: all 0.3s;
+            background: white;
+        }
+        .spot-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        }
+        .spot-image {
+            width: 100%;
+            height: 220px;
+            object-fit: cover;
+            display: block;
+        }
+        .spot-content {
+            padding: 20px;
+        }
+        .spot-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 12px;
+        }
+        .spot-name {
+            font-weight: 600;
+            font-size: 18px;
+            color: #1d1d1f;
+            margin: 0;
+        }
+        .source-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .source-streetview {
+            background: #34c759;
+            color: white;
+        }
+        .source-unsplash {
+            background: #007aff;
+            color: white;
+        }
+        .spot-coords {
+            font-size: 13px;
+            color: #6e6e73;
+            margin-bottom: 16px;
+        }
+        .weather-section {
+            background: #f9f9f9;
+            padding: 16px;
+            border-radius: 10px;
+            margin-bottom: 16px;
+        }
+        .weather-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .weather-temp {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1d1d1f;
+        }
+        .weather-icon {
+            font-size: 32px;
+        }
+        .weather-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 13px;
+            color: #6e6e73;
+        }
+        .weather-detail {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .weather-detail-label {
+            font-weight: 500;
+            color: #1d1d1f;
+        }
+        .flying-conditions {
+            margin-top: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            text-align: center;
+        }
+        .conditions-good {
+            background: #d1f4e0;
+            color: #1d7a3c;
+        }
+        .conditions-caution {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .conditions-bad {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .warnings {
+            margin-top: 12px;
+            padding: 10px;
+            background: #fff3cd;
+            border-left: 3px solid #ffc107;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .warning-item {
+            margin: 4px 0;
+            color: #856404;
+        }
+        button {
+            background: #0071e3;
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #0077ed;
+        }
+        button:disabled {
+            background: #d2d2d7;
+            cursor: not-allowed;
+        }
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #0071e3;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .metadata {
+            font-size: 11px;
+            color: #86868b;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #e5e5e7;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>DroneScout Spot Discovery Test</h1>
+        <p class="subtitle">Testing real photos (Street View) + live weather data at popular flying locations</p>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Locations</h2>
+        <p>Fetching real Street View imagery and current weather for each spot:</p>
+        <button id="loadSpotsBtn" onclick="loadSpots()">Load Flying Spots</button>
+
+        <div id="spotsGrid" class="spots-grid"></div>
+    </div>
+
+    <script>
+        const WORKER_URL = 'https://dronescout-proxy.dronescout-api.workers.dev';
+
+        // Test locations - popular drone flying spots
+        const testSpots = [
+            { name: 'Central Park, NYC', lat: 40.7829, lon: -73.9654, category: 'park' },
+            { name: 'Golden Gate Bridge, SF', lat: 37.8199, lon: -122.4783, category: 'viewpoint' },
+            { name: 'Santa Monica Pier, CA', lat: 34.0095, lon: -118.4977, category: 'water' },
+            { name: 'Millennium Park, Chicago', lat: 41.8826, lon: -87.6226, category: 'park' },
+            { name: 'Griffith Observatory, LA', lat: 34.1184, lon: -118.3004, category: 'viewpoint' },
+            { name: 'National Mall, DC', lat: 38.8895, lon: -77.0352, category: 'park' }
+        ];
+
+        async function fetchLocationImage(lat, lon) {
+            try {
+                const streetViewUrl = `${WORKER_URL}/api/streetview/image?lat=${lat}&lon=${lon}&size=800x400`;
+                const response = await fetch(streetViewUrl);
+
+                if (!response.ok) {
+                    return { imageUrl: `https://source.unsplash.com/800x400/?nature`, source: 'unsplash' };
+                }
+
+                const data = await response.json();
+
+                if (data.success && data.hasStreetView) {
+                    return {
+                        imageUrl: data.imageUrl,
+                        source: 'streetview',
+                        metadata: data.metadata
+                    };
+                } else {
+                    return { imageUrl: `https://source.unsplash.com/800x400/?nature`, source: 'unsplash' };
+                }
+            } catch (error) {
+                console.error('Image fetch error:', error);
+                return { imageUrl: `https://source.unsplash.com/800x400/?nature`, source: 'unsplash' };
+            }
+        }
+
+        async function fetchCurrentWeather(lat, lon) {
+            try {
+                const weatherUrl = `${WORKER_URL}/api/weather/current?lat=${lat}&lon=${lon}`;
+                const response = await fetch(weatherUrl);
+
+                if (!response.ok) {
+                    return { weather: null, error: 'API error' };
+                }
+
+                const data = await response.json();
+
+                if (data.success && data.weather) {
+                    return { weather: data.weather, error: null };
+                } else {
+                    return { weather: null, error: data.error };
+                }
+            } catch (error) {
+                console.error('Weather fetch error:', error);
+                return { weather: null, error: error.message };
+            }
+        }
+
+        function getWeatherIcon(conditions) {
+            const icons = {
+                'Clear': '☀️',
+                'Clouds': '☁️',
+                'Rain': '🌧️',
+                'Snow': '❄️',
+                'Drizzle': '🌦️',
+                'Thunderstorm': '⛈️',
+                'Mist': '🌫️',
+                'Fog': '🌫️'
+            };
+            return icons[conditions] || '🌤️';
+        }
+
+        function renderSpotCard(spot, imageData, weatherData) {
+            const { name, lat, lon } = spot;
+            const { imageUrl, source, metadata } = imageData;
+            const { weather } = weatherData;
+
+            const sourceClass = source === 'streetview' ? 'source-streetview' : 'source-unsplash';
+            const sourceLabel = source === 'streetview' ? 'Street View' : 'Stock Photo';
+
+            let weatherHtml = '';
+            if (weather) {
+                const conditionsClass = weather.flyingConditions.risk === 'low'
+                    ? 'conditions-good'
+                    : weather.flyingConditions.risk === 'medium'
+                        ? 'conditions-caution'
+                        : 'conditions-bad';
+
+                const warnings = weather.flyingConditions.warnings.length > 0
+                    ? `<div class="warnings">
+                        ${weather.flyingConditions.warnings.map(w => `<div class="warning-item">⚠️ ${w}</div>`).join('')}
+                    </div>`
+                    : '';
+
+                weatherHtml = `
+                    <div class="weather-section">
+                        <div class="weather-header">
+                            <div class="weather-temp">${weather.temp}${weather.tempUnit}</div>
+                            <div class="weather-icon">${getWeatherIcon(weather.conditions)}</div>
+                        </div>
+                        <div class="weather-details">
+                            <div class="weather-detail">
+                                <span class="weather-detail-label">Conditions:</span> ${weather.conditions}
+                            </div>
+                            <div class="weather-detail">
+                                <span class="weather-detail-label">Wind:</span> ${weather.windSpeed}${weather.windSpeedUnit}
+                            </div>
+                            <div class="weather-detail">
+                                <span class="weather-detail-label">Visibility:</span> ${weather.visibility}${weather.visibilityUnit}
+                            </div>
+                            <div class="weather-detail">
+                                <span class="weather-detail-label">Humidity:</span> ${weather.humidity}%
+                            </div>
+                        </div>
+                        <div class="flying-conditions ${conditionsClass}">
+                            ${weather.flyingConditions.recommendation}
+                        </div>
+                        ${warnings}
+                    </div>
+                `;
+            } else {
+                weatherHtml = `
+                    <div class="weather-section">
+                        <p style="text-align: center; color: #6e6e73;">Weather data unavailable</p>
+                    </div>
+                `;
+            }
+
+            let metadataHtml = '';
+            if (source === 'streetview' && metadata && metadata.date) {
+                metadataHtml = `
+                    <div class="metadata">
+                        📸 Photo from ${metadata.date} · ${metadata.copyright || 'Google Street View'}
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="spot-card">
+                    <img class="spot-image" src="${imageUrl}" alt="${name}"
+                         onerror="this.src='https://via.placeholder.com/800x400?text=Image+Not+Found'">
+                    <div class="spot-content">
+                        <div class="spot-header">
+                            <h3 class="spot-name">${name}</h3>
+                            <span class="source-badge ${sourceClass}">${sourceLabel}</span>
+                        </div>
+                        <div class="spot-coords">📍 ${lat.toFixed(4)}, ${lon.toFixed(4)}</div>
+                        ${weatherHtml}
+                        ${metadataHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        async function loadSpots() {
+            const spotsGrid = document.getElementById('spotsGrid');
+            const loadBtn = document.getElementById('loadSpotsBtn');
+
+            loadBtn.disabled = true;
+            spotsGrid.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading spots with real photos and weather data...</p></div>';
+
+            const spotCards = [];
+
+            for (const spot of testSpots) {
+                // Fetch image and weather in parallel
+                const [imageData, weatherData] = await Promise.all([
+                    fetchLocationImage(spot.lat, spot.lon),
+                    fetchCurrentWeather(spot.lat, spot.lon)
+                ]);
+
+                const cardHtml = renderSpotCard(spot, imageData, weatherData);
+                spotCards.push(cardHtml);
+            }
+
+            spotsGrid.innerHTML = spotCards.join('');
+            loadBtn.disabled = false;
+        }
+    </script>
+</body>
+</html>
