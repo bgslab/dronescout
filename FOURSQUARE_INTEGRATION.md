@@ -22,10 +22,10 @@ Switched from Flickr API to **Foursquare Places API v3** for location discovery.
 **Foursquare Advantages:**
 - ✅ Comprehensive location database (urban, suburban, rural, nature)
 - ✅ Verified place data with real names
-- ✅ Actual photos with prefix+suffix URLs
+- ⚠️ Photos API requires premium credits (falls back to Street View/Unsplash)
 - ✅ Community tips mentioning views/photography
 - ✅ Popularity and rating data for scoring
-- ✅ Free tier: 100,000 API calls/month
+- ✅ Free tier: 100,000 API calls/month for search
 - ✅ Server-side via Cloudflare Worker (no CORS issues)
 
 ---
@@ -261,14 +261,54 @@ Foursquare migrated their Places API during implementation. Key changes:
 
 ---
 
+## Bug Fixes (November 2, 2025)
+
+### Issue #1: 400 Errors from Decimal Radius Values
+**Problem:** Foursquare API was rejecting requests with `radius=24140.1` (decimal)
+**Root Cause:** Frontend calculated `radiusKm * 1000` producing decimals
+**Fix:** Changed to `Math.round(radiusKm * 1000)` for integer values
+**Commit:** 2c9e155
+
+### Issue #2: No Photos Displaying
+**Problem:** All `photoUrl` fields returning `null`, showing broken images
+**Root Cause:** Foursquare Photos API requires premium credits
+```
+{"message": "Your account has no API credits remaining..."}
+```
+**Fix:** Added automatic fallback to Street View/Unsplash when `photoUrl` is null
+**Location:** index.html:2096-2109 (processFoursquarePlaces function)
+**Commit:** 2c9e155
+
+### Issue #3: Generic Category Descriptions
+**Problem:** Descriptions showing "Lake, Beach" or "Grocery Store" (not drone-focused)
+**Fix:** Added drone-photography context-aware descriptions:
+- "Lake" → "Scenic water views perfect for aerial photography"
+- "Park" → "Green space with diverse landscape features"
+- "Beach" → "Coastal views with dynamic shoreline patterns"
+- Plus 8 more location types
+
+**Location:** cloudflare-worker.js:1348-1383 (generateFoursquareDescription)
+**Commit:** 2c9e155
+
+### Results After Fixes
+✅ Real location names (Crystal Lake, Woodstock Square, Lou Malnati's Pizzeria)
+✅ Photos displaying via Street View/Unsplash fallback
+✅ Meaningful, drone-focused descriptions
+✅ No 400 API errors in console
+✅ "Found 20 places from Foursquare" success messages
+
+---
+
 ## Next Steps
 
-1. **Immediate:** Get Foursquare API key and deploy
-2. **Test:** Verify Crystal Lake, IL shows real locations
-3. **V10.0 V1:** Continue with profile system and intelligent scoring
-4. **Future:** Add Aloft airspace API when approved
+1. ✅ **DONE:** Get Foursquare API key and deploy
+2. ✅ **DONE:** Verify Crystal Lake, IL shows real locations
+3. ✅ **DONE:** Fix decimal radius and photo fallback bugs
+4. **Next:** Continue with profile system and intelligent scoring
+5. **Future:** Add Aloft airspace API when approved
 
 ---
 
 **Author:** Claude Code
-**Commit:** 626503e - "Switch from Flickr to Foursquare API"
+**Initial Commit:** 626503e - "Switch from Flickr to Foursquare API"
+**Bug Fixes:** 2c9e155 - "Fix Foursquare API integration and improve UX"
