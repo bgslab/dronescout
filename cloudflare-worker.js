@@ -92,11 +92,11 @@ export default {
       // Comprehensive location discovery across ALL types: urban, suburban, rural, nature
       if (path === '/api/foursquare/discover' && request.method === 'GET') {
         const lat = url.searchParams.get('lat');
-        const lon = url.searchParams.get('lon');
+        const lon = url.searchParams.get('lon') || url.searchParams.get('lng'); // Accept both lon and lng
         const radius = url.searchParams.get('radius') || '10000'; // meters
 
         if (!lat || !lon) {
-          return jsonResponse({ error: 'Missing lat or lon parameter' }, 400);
+          return jsonResponse({ error: 'Missing lat or lon/lng parameter' }, 400);
         }
         return await handleFoursquareDiscover(lat, lon, radius, env.FOURSQUARE_API_KEY);
       }
