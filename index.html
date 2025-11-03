@@ -2035,8 +2035,8 @@
                         return { success: false, error: 'Worker URL not configured' };
                     }
 
-                    // Convert km to meters for Foursquare API
-                    const radiusMeters = radiusKm * 1000;
+                    // Convert km to meters for Foursquare API (must be integer)
+                    const radiusMeters = Math.round(radiusKm * 1000);
                     const url = `${workerUrl}/api/foursquare/discover?lat=${lat}&lon=${lng}&radius=${radiusMeters}`;
 
                     console.log(`📡 Fetching from worker: ${url}`);
@@ -2085,12 +2085,6 @@
                         // Calculate distance
                         const distance = calculateDistance(centerLat, centerLng, place.lat, place.lng);
 
-                        // Fetch weather and obstacles in parallel
-                        const [weatherData, obstacleData] = await Promise.all([
-                            fetchCurrentWeather(place.lat, place.lng, 'imperial'),
-                            detectObstacles(place.lat, place.lng, 500).catch(() => ({ count: 0, types: [], risk: 'low' }))
-                        ]);
-
                         // Determine spot type from Foursquare categories
                         const spotType = {
                             category: place.primaryCategory || 'landmark',
@@ -2098,6 +2092,27 @@
                             bestTime: 'Golden hour',
                             shotTypes: determineShotTypesFromCategories(place.categories)
                         };
+
+                        // Fetch image if Foursquare doesn't provide one (photo API requires credits)
+                        let imageUrl = place.photoUrl;
+                        let imageSource = 'foursquare';
+                        if (!imageUrl) {
+                            console.log(`🔄 No Foursquare photo for ${place.name}, trying Street View/Unsplash`);
+                            const fallbackImage = await fetchLocationImage(
+                                place.lat,
+                                place.lng,
+                                spotType.category,
+                                place.name
+                            );
+                            imageUrl = fallbackImage.imageUrl;
+                            imageSource = fallbackImage.source;
+                        }
+
+                        // Fetch weather and obstacles in parallel
+                        const [weatherData, obstacleData] = await Promise.all([
+                            fetchCurrentWeather(place.lat, place.lng, 'imperial'),
+                            detectObstacles(place.lat, place.lng, 500).catch(() => ({ count: 0, types: [], risk: 'low' }))
+                        ]);
 
                         // Build description from Foursquare data
                         let description = place.description;
@@ -2110,8 +2125,8 @@
                             name: place.name,
                             description: description,
                             coordinates: { lat: place.lat, lng: place.lng },
-                            imageUrl: place.photoUrl,
-                            imageSource: 'foursquare',
+                            imageUrl: imageUrl,
+                            imageSource: imageSource,
                             imageMetadata: {
                                 foursquareId: place.fsq_id,
                                 categories: place.categories,

@@ -1348,18 +1348,35 @@ function calculateFoursquareDroneScore(place, tipsData) {
 function generateFoursquareDescription(place) {
   const parts = [];
 
-  // Name
-  parts.push(place.name);
+  // Primary category as context
+  const primaryCat = place.categories?.[0]?.name || 'Location';
 
-  // Rating
-  if (place.rating) {
-    parts.push(`${place.rating}/10`);
+  // Drone-photography friendly description
+  const droneDescriptions = {
+    'Lake': 'Scenic water views perfect for aerial photography',
+    'Beach': 'Coastal views with dynamic shoreline patterns',
+    'Park': 'Green space with diverse landscape features',
+    'Historic Site': 'Architectural landmark with cultural significance',
+    'Monument': 'Iconic structure ideal for dramatic aerial shots',
+    'Viewpoint': 'Elevated vantage point with panoramic vistas',
+    'Bridge': 'Engineering marvel offering unique aerial perspectives',
+    'Garden': 'Landscaped grounds with seasonal color variations',
+    'Stadium': 'Architectural spectacle with geometric patterns',
+    'University': 'Campus architecture and green spaces',
+    'Harbor': 'Maritime activity and waterfront infrastructure'
+  };
+
+  const description = droneDescriptions[primaryCat] || `${primaryCat} with potential aerial photography opportunities`;
+  parts.push(description);
+
+  // Add rating if available
+  if (place.rating && place.rating > 0) {
+    parts.push(`⭐ ${place.rating}/10`);
   }
 
-  // Categories
-  if (place.categories && place.categories.length > 0) {
-    const catNames = place.categories.slice(0, 2).map(c => c.name).join(', ');
-    parts.push(catNames);
+  // Add popularity indicator if high
+  if (place.popularity && place.popularity > 0.7) {
+    parts.push('Popular spot');
   }
 
   return parts.join(' • ');
