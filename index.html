@@ -4492,11 +4492,13 @@
                             <div class="card" style="text-align: center; padding: 40px 20px;">
                                 <p style="color: #666;">No favorite spots yet. Star some locations to save them!</p>
                             </div>
-                        ` : displaySpots.map(spot => {
+                        ` : displaySpots.map((spot, index) => {
+                            const markerNumber = index + 1; // 1-indexed marker numbers
                             const riskScore = spot.adjustedScore || spot.riskScore;
                             const riskClass = riskScore >= 75 ? 'high' : riskScore >= 50 ? 'medium' : 'low';
                             const riskLabel = riskScore >= 75 ? 'Clear' : riskScore >= 50 ? 'Caution' : 'Review';
                             const riskIcon = riskScore >= 75 ? '✓' : '⚠';
+                            const markerColor = riskScore >= 75 ? '#28a745' : riskScore >= 50 ? '#ffc107' : '#dc3545';
 
                             // V9.0: Match percentage and color
                             const matchPercentage = spot.matchPercentage || 50;
@@ -4513,6 +4515,9 @@
                             return `
                                 <div class="spot-card" data-spot-id="${spot.id}">
                                     <img src="${spot.imageUrl}" alt="${spot.name}" class="spot-image">
+                                    <div style="position: absolute; top: 12px; left: 12px; background: ${markerColor}; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.3); border: 3px solid white; font-size: 14px; z-index: 5;">
+                                        ${markerNumber}
+                                    </div>
                                     <div class="risk-badge ${riskClass}">
                                         ${riskIcon} ${riskScore} ${riskLabel}
                                     </div>
@@ -4524,8 +4529,13 @@
                                     <div class="spot-info">
                                         <div class="spot-name">${spot.name}</div>
                                         <div class="spot-desc">${spot.description}</div>
+                                        ${spot.imageMetadata?.address ? `
+                                            <div style="color: #666; font-size: 12px; margin-top: 4px;">
+                                                📍 ${spot.imageMetadata.address}
+                                            </div>
+                                        ` : ''}
                                         <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
-                                            <span class="spot-distance">📍 ${spot.distance} away</span>
+                                            <span class="spot-distance">🚁 ${spot.distance} away</span>
                                             <span style="color: #ddd;">·</span>
                                             <span style="background: ${matchColor};
                                                          color: white;
@@ -4557,8 +4567,7 @@
                                                         }
                                                         ${spot.intelligence.access.type === 'public' ? 'Public' :
                                                           spot.intelligence.access.type === 'public_restricted' ? 'Permit Required' :
-                                                          spot.intelligence.access.type === 'private' ? 'Private' :
-                                                          spot.intelligence.access.type === 'limited' ? 'Limited' : 'Unknown'}
+                                                          spot.intelligence.access.type === 'private' ? 'Private' : 'Limited'}
                                                     </span>
                                                 ` : ''}
                                                 ${spot.intelligence.populationDensity ? `

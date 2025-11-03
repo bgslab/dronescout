@@ -1229,11 +1229,15 @@ async function handleFoursquareDiscover(lat, lon, radiusMeters, apiKey) {
     ];
 
     const excludeCategories = [
-      'restaurant', 'pizzeria', 'cafe', 'coffee', 'bar', 'pub',
-      'shop', 'store', 'market', 'mall', 'retail',
-      'hotel', 'motel', 'inn', 'lodging',
-      'gas station', 'parking', 'service',
-      'grocery', 'supermarket', 'bakery', 'deli'
+      'restaurant', 'pizzeria', 'cafe', 'coffee', 'bar', 'pub', 'brewery', 'winery',
+      'breakfast', 'brunch', 'lunch', 'dinner', 'fast food', 'fried chicken', 'burger',
+      'shop', 'store', 'market', 'mall', 'retail', 'dealership', 'dealer',
+      'hotel', 'motel', 'inn', 'lodging', 'hostel',
+      'gas station', 'parking', 'service', 'automotive',
+      'grocery', 'supermarket', 'bakery', 'deli', 'butcher',
+      'theater', 'cinema', 'movie', 'bowling', 'arcade',
+      'gym', 'fitness', 'salon', 'spa', 'clinic', 'hospital',
+      'bank', 'atm', 'office', 'coworking', 'library'
     ];
 
     // Deduplicate and filter by category
