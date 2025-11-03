@@ -2093,20 +2093,9 @@
                             shotTypes: determineShotTypesFromCategories(place.categories)
                         };
 
-                        // Fetch image if Foursquare doesn't provide one (photo API requires credits)
-                        let imageUrl = place.photoUrl;
-                        let imageSource = 'foursquare';
-                        if (!imageUrl) {
-                            console.log(`🔄 No Foursquare photo for ${place.name}, trying Street View/Unsplash`);
-                            const fallbackImage = await fetchLocationImage(
-                                place.lat,
-                                place.lng,
-                                spotType.category,
-                                place.name
-                            );
-                            imageUrl = fallbackImage.imageUrl;
-                            imageSource = fallbackImage.source;
-                        }
+                        // Use Foursquare photo (now included with premium credits)
+                        const imageUrl = place.photoUrl || null;
+                        const imageSource = place.photoUrl ? 'foursquare' : 'none';
 
                         // Fetch weather and obstacles in parallel
                         const [weatherData, obstacleData] = await Promise.all([

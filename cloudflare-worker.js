@@ -1181,10 +1181,12 @@ async function handleFoursquareDiscover(lat, lon, radiusMeters, apiKey) {
 
     // TODO: Update to new Foursquare category IDs when documented
     // For now, do a broad search to get diverse results
+    // Request photos, tips, rating, and popularity in the initial search
     const searchUrl = `${FOURSQUARE_API_BASE}/places/search?` +
-      `ll=${lat},${lon}&radius=${radiusMeters}&limit=50&sort=POPULARITY`;
+      `ll=${lat},${lon}&radius=${radiusMeters}&limit=50&sort=POPULARITY&` +
+      `fields=fsq_place_id,name,latitude,longitude,categories,distance,photos,tips,rating,popularity,description,location`;
 
-    console.log(`🔍 Fetching places from Foursquare...`);
+    console.log(`🔍 Fetching places from Foursquare with photos...`);
 
     const response = await fetch(searchUrl, {
       headers: {
@@ -1224,69 +1226,49 @@ async function handleFoursquareDiscover(lat, lon, radiusMeters, apiKey) {
 
     console.log(`📊 Found ${uniquePlaces.length} unique places (from ${allPlaces.length} total)`);
 
-    // Fetch photos and tips for each place (in parallel, batched)
-    const enrichedPlaces = await Promise.all(
-      uniquePlaces.slice(0, 20).map(async (place) => {
-        try {
-          // Fetch photos
-          const photosUrl = `${FOURSQUARE_API_BASE}/places/${place.fsq_place_id}/photos?limit=5`;
-          const photosResponse = await fetch(photosUrl, {
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-              'X-Places-Api-Version': '2025-06-17',
-              'Accept': 'application/json'
-            }
-          });
-          const photosData = photosResponse.ok ? await photosResponse.json() : [];
-
-          // Fetch tips
-          const tipsUrl = `${FOURSQUARE_API_BASE}/places/${place.fsq_place_id}/tips?limit=5&sort=POPULAR`;
-          const tipsResponse = await fetch(tipsUrl, {
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-              'X-Places-Api-Version': '2025-06-17',
-              'Accept': 'application/json'
-            }
-          });
-          const tipsData = tipsResponse.ok ? await tipsResponse.json() : [];
-
-          // Calculate drone score
-          const droneScore = calculateFoursquareDroneScore(place, tipsData);
-
-          return {
-            ...place,
-            photos: photosData,
-            tips: tipsData,
-            droneScore
-          };
-        } catch (error) {
-          console.error(`Error enriching place ${place.name}:`, error);
-          return { ...place, photos: [], tips: [], droneScore: 0 };
-        }
-      })
-    );
+    // Photos and tips are already included in the search response
+    // Calculate drone score for each place
+    const enrichedPlaces = uniquePlaces.slice(0, 20).map(place => {
+      const droneScore = calculateFoursquareDroneScore(place, place.tips || []);
+      return {
+        ...place,
+        droneScore
+      };
+    });
 
     // Sort by drone score
     enrichedPlaces.sort((a, b) => b.droneScore - a.droneScore);
 
     // Format for DroneScout
-    const formattedPlaces = enrichedPlaces.map(place => ({
-      fsq_id: place.fsq_place_id,
-      name: place.name,
-      lat: place.latitude,
-      lng: place.longitude,
-      categories: place.categories?.map(c => c.name) || [],
-      primaryCategory: place.categories?.[0]?.name || 'Place',
-      distance: place.distance,
-      popularity: place.popularity,
-      rating: place.rating,
-      photoUrl: (place.photos && place.photos.length > 0) ?
-        `${place.photos[0].prefix}original${place.photos[0].suffix}` :
-        null,
-      tips: (place.tips || []).map(t => ({ text: t.text })),
-      droneScore: place.droneScore,
-      description: generateFoursquareDescription(place)
-    }));
+    const formattedPlaces = enrichedPlaces.map(place => {
+      // Select best photo for drone scouting (prefer outdoor/storefront over food/menu)
+      let bestPhoto = null;
+      if (place.photos && place.photos.length > 0) {
+        const outdoorPhoto = place.photos.find(p =>
+          p.classifications && p.classifications.some(c =>
+            c.includes('outdoor') || c.includes('storefront')
+          )
+        );
+        bestPhoto = outdoorPhoto || place.photos[0];
+      }
+
+      return {
+        fsq_id: place.fsq_place_id,
+        name: place.name,
+        lat: place.latitude,
+        lng: place.longitude,
+        categories: place.categories?.map(c => c.name) || [],
+        primaryCategory: place.categories?.[0]?.name || 'Place',
+        distance: place.distance,
+        popularity: place.popularity,
+        rating: place.rating,
+        photoUrl: bestPhoto ? `${bestPhoto.prefix}600x400${bestPhoto.suffix}` : null,
+        tips: (place.tips || []).map(t => ({ text: t.text })),
+        droneScore: place.droneScore,
+        description: generateFoursquareDescription(place),
+        address: place.location?.formatted_address || ''
+      };
+    });
 
     return jsonResponse({
       success: true,
