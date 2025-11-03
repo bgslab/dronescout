@@ -1216,15 +1216,50 @@ async function handleFoursquareDiscover(lat, lon, radiusMeters, apiKey) {
       });
     }
 
-    // Deduplicate by fsq_place_id
+    // Filter for drone-worthy categories (exclude restaurants, shops, etc)
+    const droneWorthyCategories = [
+      'park', 'beach', 'lake', 'river', 'waterfront', 'harbor', 'marina',
+      'bridge', 'monument', 'landmark', 'historic', 'viewpoint', 'lookout', 'overlook',
+      'garden', 'botanical', 'nature', 'trail', 'forest', 'preserve',
+      'stadium', 'arena', 'university', 'college', 'campus',
+      'museum', 'art', 'sculpture', 'plaza', 'square',
+      'island', 'mountain', 'hill', 'valley', 'canyon',
+      'lighthouse', 'tower', 'observatory', 'rooftop',
+      'dam', 'reservoir', 'golf course', 'recreation'
+    ];
+
+    const excludeCategories = [
+      'restaurant', 'pizzeria', 'cafe', 'coffee', 'bar', 'pub',
+      'shop', 'store', 'market', 'mall', 'retail',
+      'hotel', 'motel', 'inn', 'lodging',
+      'gas station', 'parking', 'service',
+      'grocery', 'supermarket', 'bakery', 'deli'
+    ];
+
+    // Deduplicate and filter by category
     const seen = new Set();
     const uniquePlaces = allPlaces.filter(place => {
       if (seen.has(place.fsq_place_id)) return false;
       seen.add(place.fsq_place_id);
-      return true;
+
+      // Get all category names for this place
+      const categories = (place.categories || []).map(c => c.name.toLowerCase());
+
+      // Exclude if matches excluded categories
+      if (categories.some(cat => excludeCategories.some(exc => cat.includes(exc)))) {
+        return false;
+      }
+
+      // Include if matches drone-worthy categories OR has high rating/popularity
+      const isDroneWorthy = categories.some(cat =>
+        droneWorthyCategories.some(worthy => cat.includes(worthy))
+      );
+      const isHighlyRated = (place.rating && place.rating >= 8.5) || (place.popularity && place.popularity >= 0.8);
+
+      return isDroneWorthy || isHighlyRated;
     });
 
-    console.log(`📊 Found ${uniquePlaces.length} unique places (from ${allPlaces.length} total)`);
+    console.log(`📊 Found ${uniquePlaces.length} drone-worthy places (from ${allPlaces.length} total)`);
 
     // Photos and tips are already included in the search response
     // Calculate drone score for each place

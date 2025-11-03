@@ -4503,9 +4503,11 @@
                             const matchColor = getMatchColor(matchPercentage);
                             const matchLabel = getMatchLabel(matchPercentage);
 
-                            // Photo source badge
+                            // Photo source badge (only show for non-Foursquare sources)
                             const photoSourceBadge = spot.imageSource === 'streetview'
                                 ? '<div class="photo-source-badge streetview">📸 Street View</div>'
+                                : spot.imageSource === 'foursquare'
+                                ? '' // No badge for Foursquare photos (they're real)
                                 : '<div class="photo-source-badge stock">🖼️ Illustrative</div>';
 
                             return `
