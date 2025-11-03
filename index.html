@@ -4515,11 +4515,11 @@
                             return `
                                 <div class="spot-card" data-spot-id="${spot.id}">
                                     <img src="${spot.imageUrl}" alt="${spot.name}" class="spot-image">
-                                    <div style="position: absolute; top: 12px; left: 12px; background: ${markerColor}; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.3); border: 3px solid white; font-size: 14px; z-index: 5;">
-                                        ${markerNumber}
-                                    </div>
                                     <div class="risk-badge ${riskClass}">
                                         ${riskIcon} ${riskScore} ${riskLabel}
+                                    </div>
+                                    <div style="position: absolute; top: 52px; right: 12px; background: ${markerColor}; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.3); border: 2px solid white; font-size: 12px; z-index: 5;">
+                                        ${markerNumber}
                                     </div>
                                     ${photoSourceBadge}
                                     <button class="favorite-star ${state.favorites.includes(spot.id) ? 'active' : ''}"
@@ -5045,23 +5045,30 @@
                                 </div>
 
                                 <div class="profile-subsection">
-                                    <h4 style="font-size: 14px; font-weight: 700; color: #1e3c72; margin: 15px 0 10px 0;">Active Waivers</h4>
-                                    <div id="waiversList">
-                                        ${state.userProfile.waivers.map((waiver, idx) => `
-                                            <div class="waiver-item" data-idx="${idx}">
-                                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                                    <div>
-                                                        <strong>${getWaiverLabel(waiver.type)}</strong>
-                                                        ${waiver.type === 'over_people' ? ` (Cat ${waiver.category})` : ''}
-                                                        <div style="font-size: 12px; color: #666;">Expires: ${formatDate(waiver.expiryDate)}</div>
-                                                        ${waiver.notes ? `<div style="font-size: 12px; color: #888;">${waiver.notes}</div>` : ''}
-                                                    </div>
-                                                    <button class="btn-secondary btn-small" onclick="removeWaiver(${idx})">Remove</button>
-                                                </div>
-                                            </div>
-                                        `).join('')}
+                                    <h4 style="font-size: 14px; font-weight: 700; color: #1e3c72; margin: 15px 0 10px 0;">Part 107 Waivers</h4>
+                                    <p style="font-size: 12px; color: #666; margin-bottom: 12px;">Select waivers granted under your Part 107 certificate:</p>
+                                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="checkbox" id="waiverOverPeople"
+                                                ${state.userProfile.waivers.some(w => w.type === 'over_people') ? 'checked' : ''}>
+                                            <span>Operations Over People (Part 107.39)</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="checkbox" id="waiverNightOps"
+                                                ${state.userProfile.waivers.some(w => w.type === 'night_operations') ? 'checked' : ''}>
+                                            <span>Night Operations (Part 107.29)</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="checkbox" id="waiverBVLOS"
+                                                ${state.userProfile.waivers.some(w => w.type === 'beyond_vlos') ? 'checked' : ''}>
+                                            <span>Beyond Visual Line of Sight (Part 107.31)</span>
+                                        </label>
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                            <input type="checkbox" id="waiverMovingVehicle"
+                                                ${state.userProfile.waivers.some(w => w.type === 'moving_vehicle') ? 'checked' : ''}>
+                                            <span>Operations from Moving Vehicle (Part 107.25)</span>
+                                        </label>
                                     </div>
-                                    <button class="btn-secondary" id="addWaiverBtn" style="margin-top: 10px;">+ Add Waiver</button>
                                 </div>
 
                                 <div class="profile-subsection">
@@ -5834,20 +5841,41 @@
                     });
                 }
 
+                // V10.0: Waiver checkboxes
+                const waiverCheckboxes = [
+                    { id: 'waiverOverPeople', type: 'over_people' },
+                    { id: 'waiverNightOps', type: 'night_operations' },
+                    { id: 'waiverBVLOS', type: 'beyond_vlos' },
+                    { id: 'waiverMovingVehicle', type: 'moving_vehicle' }
+                ];
+
+                waiverCheckboxes.forEach(({ id, type }) => {
+                    const checkbox = document.getElementById(id);
+                    if (checkbox) {
+                        checkbox.addEventListener('change', (e) => {
+                            if (e.target.checked) {
+                                // Add waiver if not already present
+                                if (!state.userProfile.waivers.some(w => w.type === type)) {
+                                    state.userProfile.waivers.push({
+                                        type: type,
+                                        expiryDate: null, // Tied to Part 107 cert
+                                        notes: 'Granted under Part 107 certificate'
+                                    });
+                                }
+                            } else {
+                                // Remove waiver
+                                state.userProfile.waivers = state.userProfile.waivers.filter(w => w.type !== type);
+                            }
+                        });
+                    }
+                });
+
                 // V10.0: Save profile button
                 const saveProfileBtn = document.getElementById('saveProfileBtn');
                 if (saveProfileBtn) {
                     saveProfileBtn.addEventListener('click', () => {
                         saveToStorage('userProfile', state.userProfile);
                         alert('Profile saved successfully!');
-                    });
-                }
-
-                // V10.0: Add waiver button
-                const addWaiverBtn = document.getElementById('addWaiverBtn');
-                if (addWaiverBtn) {
-                    addWaiverBtn.addEventListener('click', () => {
-                        showAddWaiverModal();
                     });
                 }
 
