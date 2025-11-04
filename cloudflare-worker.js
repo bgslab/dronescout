@@ -88,6 +88,19 @@ export default {
         return await handleCurrentWeather(lat, lon, units, env.OPENWEATHER_API_KEY);
       }
 
+      // Historical weather for past flights (uses One Call API 3.0 Timemachine)
+      if (path === '/api/weather/historical' && request.method === 'GET') {
+        const lat = url.searchParams.get('lat');
+        const lon = url.searchParams.get('lon');
+        const timestamp = url.searchParams.get('timestamp'); // Unix timestamp
+        const units = url.searchParams.get('units') || 'imperial';
+
+        if (!lat || !lon || !timestamp) {
+          return jsonResponse({ error: 'Missing lat, lon, or timestamp parameter' }, 400);
+        }
+        return await handleHistoricalWeather(lat, lon, timestamp, units, env.OPENWEATHER_API_KEY);
+      }
+
       // V10.1: Foursquare Places Discovery (PRIMARY METHOD - Per Claude Chat Recommendation)
       // Comprehensive location discovery across ALL types: urban, suburban, rural, nature
       if (path === '/api/foursquare/discover' && request.method === 'GET') {
@@ -794,6 +807,128 @@ async function handleCurrentWeather(lat, lon, units, apiKey) {
     console.error('Weather fetch error:', error);
     return jsonResponse({
       error: 'Failed to fetch weather data',
+      weather: null,
+      details: error.message
+    }, 500);
+  }
+}
+
+/**
+ * Handle Historical Weather Data Request
+ * Uses OpenWeather One Call API 3.0 Timemachine for historical data
+ * For flights within last 5 days: free tier
+ * For older flights: paid tier ($0.001 per call)
+ * Parameters: lat, lon, timestamp (Unix), units
+ * Returns: Historical weather data at flight time
+ */
+async function handleHistoricalWeather(lat, lon, timestamp, units, apiKey) {
+  if (!apiKey) {
+    return jsonResponse({
+      error: 'OpenWeather API key not configured',
+      weather: null
+    }, 500);
+  }
+
+  // Convert timestamp to Unix if needed
+  const unixTimestamp = typeof timestamp === 'string' ? parseInt(timestamp) : timestamp;
+  const flightDate = new Date(unixTimestamp * 1000);
+  const now = new Date();
+  const daysAgo = Math.floor((now - flightDate) / (1000 * 60 * 60 * 24));
+
+  // Check if flight is within last 5 days (free tier) or older (paid tier)
+  const isFreeData = daysAgo <= 5;
+
+  // Use One Call API 3.0 Timemachine
+  // Documentation: https://openweathermap.org/api/one-call-3#history
+  const weatherUrl = `https://api.openweathermap.org/data/3.0/onecall/timemachine?lat=${lat}&lon=${lon}&dt=${unixTimestamp}&units=${units}&appid=${apiKey}`;
+
+  try {
+    const response = await fetch(weatherUrl);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('OpenWeather Historical API error:', errorData);
+
+      // If paid tier required and account doesn't have it, return graceful error
+      if (response.status === 401 || response.status === 403) {
+        return jsonResponse({
+          success: false,
+          error: 'Historical weather data requires OpenWeather subscription',
+          weather: null,
+          fallback: true,
+          message: `Flight from ${daysAgo} days ago - historical weather unavailable on free tier`
+        }, 200); // Return 200 so frontend can handle gracefully
+      }
+
+      return jsonResponse({
+        error: 'Failed to fetch historical weather data',
+        weather: null,
+        details: errorData.message || response.statusText
+      }, response.status);
+    }
+
+    const data = await response.json();
+
+    // Parse historical weather data (structure is similar to current weather)
+    const historicalData = data.data && data.data[0] ? data.data[0] : data;
+
+    const weather = {
+      // Basic conditions
+      temp: Math.round(historicalData.temp),
+      tempUnit: units === 'imperial' ? '°F' : '°C',
+      feelsLike: Math.round(historicalData.feels_like),
+      conditions: historicalData.weather[0].main,
+      description: historicalData.weather[0].description,
+      icon: historicalData.weather[0].icon,
+
+      // Wind (critical for drone flying)
+      windSpeed: Math.round(historicalData.wind_speed * 10) / 10,
+      windSpeedUnit: units === 'imperial' ? 'mph' : 'm/s',
+      windDeg: historicalData.wind_deg || 0,
+      windGust: historicalData.wind_gust ? Math.round(historicalData.wind_gust * 10) / 10 : null,
+
+      // Visibility (critical for VLOS requirements)
+      visibility: historicalData.visibility ? Math.round(historicalData.visibility * 0.000621371 * 10) / 10 : null,
+      visibilityUnit: 'mi',
+      visibilityMeters: historicalData.visibility,
+
+      // Other conditions
+      humidity: historicalData.humidity,
+      pressure: historicalData.pressure,
+      clouds: historicalData.clouds,
+      dewPoint: historicalData.dew_point ? Math.round(historicalData.dew_point) : null,
+      uvi: historicalData.uvi || null, // UV index
+
+      // Timestamp
+      timestamp: historicalData.dt,
+      fetchedAt: new Date().toISOString(),
+      isHistorical: true,
+      daysAgo: daysAgo,
+      isFreeData: isFreeData,
+
+      // Flying conditions assessment (same logic as current weather)
+      flyingConditions: assessFlyingConditions({
+        wind: {
+          speed: historicalData.wind_speed,
+          gust: historicalData.wind_gust
+        },
+        visibility: historicalData.visibility,
+        weather: historicalData.weather,
+        main: { temp: historicalData.temp },
+        clouds: { all: historicalData.clouds }
+      }, units)
+    };
+
+    return jsonResponse({
+      success: true,
+      weather: weather,
+      raw: data
+    });
+  } catch (error) {
+    console.error('Historical weather fetch error:', error);
+    return jsonResponse({
+      success: false,
+      error: 'Failed to fetch historical weather data',
       weather: null,
       details: error.message
     }, 500);

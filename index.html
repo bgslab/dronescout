@@ -3256,6 +3256,13 @@
 
                     // Reverse geocode locations for newly synced flights (rate limited)
                     await reverseGeocodeAllFlights();
+
+                    // Fetch historical weather for flights (V10.2)
+                    state.syncMessage = { type: 'info', text: 'Fetching weather data...' };
+                    render();
+                    await fetchWeatherForFlights();
+                    state.syncMessage = { type: 'success', text: `Synced ${data.flights ? data.flights.length : 0} flights with weather data` };
+                    render();
                 } catch (error) {
                     console.error('Sync error:', {
                         message: error.message,
@@ -3355,6 +3362,85 @@
                 }
 
                 return null;
+            }
+
+            // V10.2: Fetch historical weather for all flights
+            async function fetchWeatherForFlights() {
+                try {
+                    console.log('📊 Fetching weather for flights...');
+                    let weatherFetched = 0;
+
+                    // Process flights in batches to avoid rate limiting
+                    for (const flight of state.flights) {
+                        // Skip if already has weather data
+                        if (flight.weather) {
+                            console.log(`Flight ${flight.id} already has weather data`);
+                            continue;
+                        }
+
+                        // Skip if no location data
+                        if (!flight.location || !flight.location.latitude || !flight.location.longitude) {
+                            console.log(`Flight ${flight.id} has no location data`);
+                            continue;
+                        }
+
+                        // Skip if no date
+                        if (!flight.date && !flight.created_at) {
+                            console.log(`Flight ${flight.id} has no date`);
+                            continue;
+                        }
+
+                        // Get timestamp from flight date
+                        const flightDate = new Date(flight.date || flight.created_at);
+                        const timestamp = Math.floor(flightDate.getTime() / 1000); // Unix timestamp
+
+                        console.log(`Fetching weather for flight ${flight.id} at ${flightDate.toISOString()}`);
+
+                        try {
+                            const response = await fetch(
+                                `${state.syncSettings.workerUrl}/api/weather/historical?` +
+                                `lat=${flight.location.latitude}&` +
+                                `lon=${flight.location.longitude}&` +
+                                `timestamp=${timestamp}&` +
+                                `units=imperial`
+                            );
+
+                            const data = await response.json();
+
+                            if (data.success && data.weather) {
+                                // Add weather to flight object
+                                flight.weather = data.weather;
+                                weatherFetched++;
+                                console.log(`✅ Weather fetched for flight ${flight.id}:`, data.weather);
+                            } else if (data.fallback) {
+                                // Historical data not available (older than 5 days on free tier)
+                                console.log(`⚠️ Historical weather not available for flight ${flight.id}: ${data.message}`);
+                                flight.weather = {
+                                    unavailable: true,
+                                    message: data.message,
+                                    fallback: true
+                                };
+                            } else {
+                                console.error(`Failed to fetch weather for flight ${flight.id}:`, data.error);
+                            }
+
+                            // Small delay to avoid rate limiting (1 req/sec for free tier)
+                            await new Promise(resolve => setTimeout(resolve, 1100));
+
+                        } catch (error) {
+                            console.error(`Error fetching weather for flight ${flight.id}:`, error);
+                        }
+                    }
+
+                    // Save updated flights with weather data
+                    if (weatherFetched > 0) {
+                        saveToStorage('flights', state.flights);
+                        console.log(`✅ Fetched weather for ${weatherFetched} flights`);
+                    }
+
+                } catch (error) {
+                    console.error('Error in fetchWeatherForFlights:', error);
+                }
             }
 
             // View flight path on map
@@ -4874,6 +4960,55 @@
                                             ${flight.type === 'manual' ? '✏️ Manual' : '☁️ Synced'}
                                         </div>
                                     </div>
+
+                                    <!-- V10.2: Weather Data -->
+                                    ${flight.weather && !flight.weather.unavailable ? `
+                                        <div style="margin: 12px 0; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                                <div style="font-weight: 600; font-size: 14px;">
+                                                    ☁️ Flight Weather Conditions
+                                                </div>
+                                                <div style="background: ${flight.weather.flyingConditions?.riskColor === 'green' ? '#28a745' : flight.weather.flyingConditions?.riskColor === 'yellow' ? '#ffc107' : '#dc3545'}; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">
+                                                    ${flight.weather.flyingConditions?.recommendation || 'N/A'}
+                                                </div>
+                                            </div>
+                                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; font-size: 13px;">
+                                                <div>
+                                                    <div style="opacity: 0.9; font-size: 11px;">Temperature</div>
+                                                    <div style="font-weight: 600; font-size: 16px;">${flight.weather.temp}${flight.weather.tempUnit}</div>
+                                                </div>
+                                                <div>
+                                                    <div style="opacity: 0.9; font-size: 11px;">Wind</div>
+                                                    <div style="font-weight: 600; font-size: 16px;">${flight.weather.windSpeed} ${flight.weather.windSpeedUnit}</div>
+                                                </div>
+                                                <div>
+                                                    <div style="opacity: 0.9; font-size: 11px;">Visibility</div>
+                                                    <div style="font-weight: 600; font-size: 16px;">${flight.weather.visibility || 'N/A'} ${flight.weather.visibility ? flight.weather.visibilityUnit : ''}</div>
+                                                </div>
+                                                <div>
+                                                    <div style="opacity: 0.9; font-size: 11px;">Conditions</div>
+                                                    <div style="font-weight: 600; font-size: 14px; text-transform: capitalize;">${flight.weather.description || flight.weather.conditions}</div>
+                                                </div>
+                                            </div>
+                                            ${flight.weather.flyingConditions?.warnings?.length > 0 ? `
+                                                <div style="margin-top: 8px; padding: 8px; background: rgba(255,255,255,0.2); border-radius: 6px; font-size: 12px;">
+                                                    ⚠️ ${flight.weather.flyingConditions.warnings.join(' • ')}
+                                                </div>
+                                            ` : ''}
+                                            ${flight.weather.isHistorical ? `
+                                                <div style="margin-top: 8px; font-size: 11px; opacity: 0.8; text-align: right;">
+                                                    📊 Historical data from ${flight.weather.daysAgo} days ago
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                    ` : flight.weather?.unavailable ? `
+                                        <div style="margin: 12px 0; padding: 12px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #6c757d;">
+                                            <div style="font-size: 13px; color: #666;">
+                                                📊 ${flight.weather.message || 'Weather data not available for this flight'}
+                                            </div>
+                                        </div>
+                                    ` : ''}
+
                                     <div class="flight-details">
                                         ${flight.notes ? `<p><strong>Notes:</strong> ${flight.notes}</p>` : ''}
                                     </div>
