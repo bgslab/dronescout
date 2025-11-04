@@ -5098,6 +5098,12 @@
                             <button class="btn" id="syncSettingsBtn" ${state.syncSettings.connectionStatus === 'checking' ? 'disabled' : ''}>
                                 ${state.syncSettings.connectionStatus === 'checking' ? '<span class="spinner"></span> Checking...' : '☁️ Sync Now'}
                             </button>
+                            <button class="btn" id="fetchWeatherBtn" style="margin-top: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                                🌤️ Fetch Weather for Flights
+                            </button>
+                            <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                                ${state.flights.filter(f => f.weather).length} of ${state.flights.length} flights have weather data
+                            </div>
                         </div>
 
                         <div class="settings-section">
@@ -5806,6 +5812,18 @@
                 const syncSettingsBtn = document.getElementById('syncSettingsBtn');
                 if (syncSettingsBtn) {
                     syncSettingsBtn.addEventListener('click', syncFlights);
+                }
+
+                // V10.2: Fetch weather button
+                const fetchWeatherBtn = document.getElementById('fetchWeatherBtn');
+                if (fetchWeatherBtn) {
+                    fetchWeatherBtn.addEventListener('click', async () => {
+                        state.syncMessage = { type: 'info', text: 'Fetching weather data...' };
+                        render();
+                        await fetchWeatherForFlights();
+                        state.syncMessage = { type: 'success', text: `Weather fetched for ${state.flights.filter(f => f.weather && !f.weather.unavailable).length} flights` };
+                        render();
+                    });
                 }
 
                 const updateWorkerBtn = document.getElementById('updateWorkerBtn');
