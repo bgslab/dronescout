@@ -3378,9 +3378,31 @@
                             continue;
                         }
 
-                        // Skip if no location data
-                        if (!flight.location || !flight.location.latitude || !flight.location.longitude) {
-                            console.log(`Flight ${flight.id} has no location data`);
+                        // Get location from telemetry track if available, otherwise from location field
+                        let lat, lon;
+
+                        if (flight.telemetry?.track && flight.telemetry.track.length > 0) {
+                            // Use first valid GPS point from telemetry
+                            const firstPoint = flight.telemetry.track.find(p => p.lat !== 0 && p.lon !== 0);
+                            if (firstPoint) {
+                                lat = firstPoint.lat;
+                                lon = firstPoint.lon;
+                                console.log(`Using telemetry GPS for flight ${flight.id}: ${lat}, ${lon}`);
+                            }
+                        } else if (flight.location) {
+                            // Try location field (might be structured differently)
+                            if (flight.location.latitude && flight.location.longitude) {
+                                lat = flight.location.latitude;
+                                lon = flight.location.longitude;
+                            } else if (flight.location.lat && flight.location.lon) {
+                                lat = flight.location.lat;
+                                lon = flight.location.lon;
+                            }
+                        }
+
+                        // Skip if no location data found
+                        if (!lat || !lon) {
+                            console.log(`Flight ${flight.id} has no location data - need to load telemetry first`);
                             continue;
                         }
 
@@ -3399,8 +3421,8 @@
                         try {
                             const response = await fetch(
                                 `${state.syncSettings.workerUrl}/api/weather/historical?` +
-                                `lat=${flight.location.latitude}&` +
-                                `lon=${flight.location.longitude}&` +
+                                `lat=${lat}&` +
+                                `lon=${lon}&` +
                                 `timestamp=${timestamp}&` +
                                 `units=imperial`
                             );
@@ -5103,6 +5125,7 @@
                             </button>
                             <div style="margin-top: 8px; font-size: 12px; color: #666;">
                                 ${state.flights.filter(f => f.weather).length} of ${state.flights.length} flights have weather data
+                                ${state.flights.filter(f => f.telemetry?.track).length > 0 ? `<br>${state.flights.filter(f => f.telemetry?.track).length} flights have GPS data loaded` : '<br>⚠️ Tip: Load flight telemetry first (click "View Flight Path" in History)'}
                             </div>
                         </div>
 
