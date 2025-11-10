@@ -141,6 +141,18 @@ export default {
         return await handleAirspaceClassification(lat, lon);
       }
 
+      // V13.4: FAA Airspace Geometry (for map visualization)
+      if (path === '/api/airspace/geometry' && request.method === 'GET') {
+        const lat = url.searchParams.get('lat');
+        const lon = url.searchParams.get('lon') || url.searchParams.get('lng');
+        const radius = url.searchParams.get('radius') || '25000'; // Default 25km
+
+        if (!lat || !lon) {
+          return jsonResponse({ error: 'Missing lat or lon/lng parameter' }, 400);
+        }
+        return await handleAirspaceGeometry(lat, lon, radius);
+      }
+
       // Route requests - Google Places API (FALLBACK ONLY)
       // V10.0: Comprehensive POI search for drone spots
       if (path === '/api/places/nearbysearch' && request.method === 'GET') {
@@ -1984,6 +1996,88 @@ async function handleAirspaceClassification(lat, lon) {
       airspace: null,
       error: 'Failed to fetch airspace data',
       message: 'Airspace data temporarily unavailable'
+    }, 500);
+  }
+}
+
+/**
+ * V13.4: Fetch FAA airspace geometries for map visualization
+ * Returns GeoJSON features with polygons for drawing on Leaflet
+ */
+async function handleAirspaceGeometry(lat, lon, radiusMeters) {
+  try {
+    // Create bounding box from center point + radius
+    // Rough conversion: 1 degree ≈ 111km at equator
+    const radiusKm = radiusMeters / 1000;
+    const latOffset = radiusKm / 111;
+    const lonOffset = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
+
+    const bbox = {
+      xmin: lon - lonOffset,
+      ymin: lat - latOffset,
+      xmax: lon + lonOffset,
+      ymax: lat + latOffset
+    };
+
+    // Query FAA Airspace with geometry
+    const queryParams = new URLSearchParams({
+      where: "CLASS_CODE IN ('B', 'C', 'D', 'E')", // Only controlled airspace
+      geometry: `${bbox.xmin},${bbox.ymin},${bbox.xmax},${bbox.ymax}`,
+      geometryType: 'esriGeometryEnvelope',
+      inSR: '4326',
+      outSR: '4326',
+      spatialRel: 'esriSpatialRelIntersects',
+      outFields: 'IDENT_TXT,NAME_TXT,CLASS_CODE,TYPE_CODE,DISTVERTLOWER_VAL,DISTVERTUPPER_VAL',
+      returnGeometry: 'true',
+      f: 'geojson' // Return as GeoJSON for Leaflet
+    });
+
+    const apiUrl = `${FAA_AIRSPACE_API}/query?${queryParams}`;
+    console.log('Fetching airspace geometry:', apiUrl);
+
+    const response = await fetch(apiUrl);
+
+    if (!response.ok) {
+      console.error(`FAA Airspace Geometry API error: ${response.status}`);
+      return jsonResponse({
+        success: false,
+        error: 'Failed to fetch airspace geometry'
+      }, response.status);
+    }
+
+    const geojson = await response.json();
+
+    // Group features by class for easier layer management
+    const byClass = {
+      B: [],
+      C: [],
+      D: [],
+      E: []
+    };
+
+    if (geojson.features) {
+      geojson.features.forEach(feature => {
+        const airspaceClass = feature.properties.CLASS_CODE;
+        if (byClass[airspaceClass]) {
+          byClass[airspaceClass].push(feature);
+        }
+      });
+    }
+
+    return jsonResponse({
+      success: true,
+      count: geojson.features?.length || 0,
+      geojson: geojson,
+      byClass: byClass,
+      bbox: bbox
+    });
+
+  } catch (error) {
+    console.error('Airspace geometry fetch error:', error);
+    return jsonResponse({
+      success: false,
+      error: 'Failed to fetch airspace geometry',
+      message: error.message
     }, 500);
   }
 }

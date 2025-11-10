@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout V13.3 - Smart Spot Discovery</title>
+    <title>DroneScout V13.4 - Smart Spot Discovery</title>
     <!-- Build: 2025-10-31-23:50 UTC - FORCE RELOAD -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -1046,7 +1046,7 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout V13.3</h1>
+            <h1>🚁 DroneScout V13.4</h1>
             <p>Plan • Discover • Map • Assess • Fly • Sync • Analyze</p>
         </div>
 
@@ -4979,6 +4979,85 @@
                 return html;
             }
 
+            /**
+             * V13.4: Load FAA airspace geometry and add to map layers
+             */
+            async function loadAirspaceGeometry(lat, lng) {
+                try {
+                    const workerUrl = state.syncSettings?.workerUrl;
+                    if (!workerUrl) {
+                        console.warn('Worker URL not configured, skipping airspace geometry');
+                        return;
+                    }
+
+                    console.log('🗺️ Loading airspace geometry for map visualization...');
+
+                    const url = `${workerUrl}/api/airspace/geometry?lat=${lat}&lon=${lng}&radius=25000`;
+                    const response = await fetch(url);
+
+                    if (!response.ok) {
+                        console.warn('Airspace geometry API error:', response.status);
+                        return;
+                    }
+
+                    const data = await response.json();
+
+                    if (!data.success || !data.byClass) {
+                        console.warn('No airspace geometry data returned');
+                        return;
+                    }
+
+                    console.log(`✅ Loaded ${data.count} airspace features`);
+
+                    // Style configurations for each airspace class
+                    const styles = {
+                        B: { color: '#ff0000', fillColor: '#ff0000', fillOpacity: 0.15, weight: 2 },
+                        C: { color: '#ff00ff', fillColor: '#ff00ff', fillOpacity: 0.15, weight: 2 },
+                        D: { color: '#0000ff', fillColor: '#0000ff', fillOpacity: 0.15, weight: 2 },
+                        E: { color: '#ff00ff', fillColor: '#ff00ff', fillOpacity: 0.1, weight: 1, dashArray: '5, 5' }
+                    };
+
+                    // Add GeoJSON features to appropriate layers
+                    Object.keys(data.byClass).forEach(airspaceClass => {
+                        const features = data.byClass[airspaceClass];
+                        if (features.length === 0) return;
+
+                        const layerKey = `class${airspaceClass}`;
+                        const layer = state.airspaceLayers[layerKey];
+                        const style = styles[airspaceClass];
+
+                        features.forEach(feature => {
+                            const geoJsonLayer = L.geoJSON(feature, {
+                                style: style,
+                                onEachFeature: function(feature, layer) {
+                                    // Add popup with airspace info
+                                    const props = feature.properties;
+                                    const popupContent = `
+                                        <div style="min-width: 150px;">
+                                            <h4 style="margin: 0 0 8px 0; color: #1e3c72;">Class ${props.CLASS_CODE} Airspace</h4>
+                                            <div style="font-size: 13px;">
+                                                <strong>${props.NAME_TXT || 'Unnamed'}</strong><br>
+                                                ${props.IDENT_TXT ? `ID: ${props.IDENT_TXT}<br>` : ''}
+                                                ${props.DISTVERTLOWER_VAL !== undefined ? `Floor: ${props.DISTVERTLOWER_VAL} ft MSL<br>` : ''}
+                                                ${props.DISTVERTUPPER_VAL !== undefined ? `Ceiling: ${props.DISTVERTUPPER_VAL} ft MSL<br>` : ''}
+                                            </div>
+                                        </div>
+                                    `;
+                                    layer.bindPopup(popupContent);
+                                }
+                            });
+
+                            geoJsonLayer.addTo(layer);
+                        });
+
+                        console.log(`Added ${features.length} Class ${airspaceClass} features to layer`);
+                    });
+
+                } catch (error) {
+                    console.error('Error loading airspace geometry:', error);
+                }
+            }
+
             // V6: Map initialization and management
             function initMap() {
                 // Check if Leaflet is loaded
@@ -5033,10 +5112,36 @@
                 state.map = L.map('mapContainer').setView([centerLat, centerLng], zoom);
 
                 // Add OpenStreetMap tile layer
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
                     maxZoom: 19
                 }).addTo(state.map);
+
+                // V13.4: Create airspace layer groups (NOT added to map by default)
+                state.airspaceLayers = {
+                    classB: L.layerGroup(),
+                    classC: L.layerGroup(),
+                    classD: L.layerGroup(),
+                    classE: L.layerGroup()
+                };
+
+                // V13.4: Add layer control (top-right corner)
+                const baseMaps = {
+                    "OpenStreetMap": osmLayer
+                };
+                const overlayMaps = {
+                    "Class B Airspace": state.airspaceLayers.classB,
+                    "Class C Airspace": state.airspaceLayers.classC,
+                    "Class D Airspace": state.airspaceLayers.classD,
+                    "Class E Airspace": state.airspaceLayers.classE
+                };
+                L.control.layers(baseMaps, overlayMaps, {
+                    position: 'topright',
+                    collapsed: false
+                }).addTo(state.map);
+
+                // V13.4: Load airspace geometry data for map visualization
+                loadAirspaceGeometry(centerLat, centerLng);
 
                 // Add user location marker if available
                 if (state.userLocation) {
