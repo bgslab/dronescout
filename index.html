@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout V13.4 - Smart Spot Discovery</title>
+    <title>DroneScout V13.4.2 - Smart Spot Discovery</title>
     <!-- Build: 2025-10-31-23:50 UTC - FORCE RELOAD -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -1046,7 +1046,7 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout V13.4</h1>
+            <h1>🚁 DroneScout V13.4.2</h1>
             <p>Plan • Discover • Map • Assess • Fly • Sync • Analyze</p>
         </div>
 
@@ -4995,14 +4995,45 @@
             }
 
             /**
+             * V13.4.2: Helper to add layer control regardless of data load success
+             */
+            function addLayerControlAnyway() {
+                if (state.map && state.osmLayer && state.airspaceLayers) {
+                    // Remove existing control if present
+                    if (state.layerControl) {
+                        state.map.removeControl(state.layerControl);
+                    }
+
+                    const baseMaps = {
+                        "OpenStreetMap": state.osmLayer
+                    };
+                    const overlayMaps = {
+                        "Class B Airspace": state.airspaceLayers.classB,
+                        "Class C Airspace": state.airspaceLayers.classC,
+                        "Class D Airspace": state.airspaceLayers.classD,
+                        "Class E Airspace": state.airspaceLayers.classE
+                    };
+
+                    state.layerControl = L.control.layers(baseMaps, overlayMaps, {
+                        position: 'topright',
+                        collapsed: false
+                    }).addTo(state.map);
+
+                    console.log('✅ Added layer control (layers may be empty)');
+                }
+            }
+
+            /**
              * V13.4: Load FAA airspace geometry and add to map layers
              * V13.4.1: Added detailed error logging and validation
+             * V13.4.2: Add layer control after data loads
              */
             async function loadAirspaceGeometry(lat, lng) {
                 try {
                     // Validate that airspace layers are initialized
                     if (!state.airspaceLayers) {
                         console.error('❌ Airspace layers not initialized! Map may not be ready.');
+                        addLayerControlAnyway(); // Still add control even if layers not ready
                         return;
                     }
 
@@ -5010,6 +5041,7 @@
                     if (!workerUrl) {
                         console.error('❌ Airspace layers: Worker URL not configured in Settings');
                         console.log('💡 Go to Settings tab and configure Cloudflare Worker URL to enable airspace visualization');
+                        addLayerControlAnyway(); // Add control even without data
                         return;
                     }
 
@@ -5025,6 +5057,7 @@
                         console.error(`❌ Airspace geometry API error: ${response.status} ${response.statusText}`);
                         const errorText = await response.text();
                         console.error('Response:', errorText);
+                        addLayerControlAnyway(); // Add control even if API call failed
                         return;
                     }
 
@@ -5033,11 +5066,13 @@
 
                     if (!data.success) {
                         console.error('❌ Airspace API returned success=false:', data.error || data.message);
+                        addLayerControlAnyway(); // Add control even without data
                         return;
                     }
 
                     if (!data.byClass) {
                         console.warn('⚠️ No byClass data in response');
+                        addLayerControlAnyway(); // Add control even without data
                         return;
                     }
 
@@ -5110,10 +5145,38 @@
                     });
 
                     console.log('✅ Airspace geometry loading complete!');
+
+                    // V13.4.2: Add layer control AFTER data is loaded
+                    // This ensures the control has access to populated layers
+                    if (state.map && state.osmLayer) {
+                        // Remove existing control if present
+                        if (state.layerControl) {
+                            state.map.removeControl(state.layerControl);
+                        }
+
+                        const baseMaps = {
+                            "OpenStreetMap": state.osmLayer
+                        };
+                        const overlayMaps = {
+                            "Class B Airspace": state.airspaceLayers.classB,
+                            "Class C Airspace": state.airspaceLayers.classC,
+                            "Class D Airspace": state.airspaceLayers.classD,
+                            "Class E Airspace": state.airspaceLayers.classE
+                        };
+
+                        state.layerControl = L.control.layers(baseMaps, overlayMaps, {
+                            position: 'topright',
+                            collapsed: false
+                        }).addTo(state.map);
+
+                        console.log('✅ Added layer control with populated airspace layers');
+                    }
+
                     console.log('💡 Use the layer control (top-right) to toggle airspace visibility');
 
                 } catch (error) {
                     console.error('Error loading airspace geometry:', error);
+                    addLayerControlAnyway(); // Add control even if fetch failed
                 }
             }
 
@@ -5184,22 +5247,10 @@
                     classE: L.layerGroup()
                 };
 
-                // V13.4: Add layer control (top-right corner)
-                const baseMaps = {
-                    "OpenStreetMap": osmLayer
-                };
-                const overlayMaps = {
-                    "Class B Airspace": state.airspaceLayers.classB,
-                    "Class C Airspace": state.airspaceLayers.classC,
-                    "Class D Airspace": state.airspaceLayers.classD,
-                    "Class E Airspace": state.airspaceLayers.classE
-                };
-                L.control.layers(baseMaps, overlayMaps, {
-                    position: 'topright',
-                    collapsed: false
-                }).addTo(state.map);
+                // V13.4.2: Store base layer for layer control
+                state.osmLayer = osmLayer;
 
-                // V13.4: Load airspace geometry data for map visualization
+                // V13.4: Load airspace geometry data FIRST, then add control after data loads
                 loadAirspaceGeometry(centerLat, centerLng);
 
                 // Add user location marker if available

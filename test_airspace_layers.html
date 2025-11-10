@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Airspace Layers Test - DroneScout</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1d29;
+            color: white;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            max-width: 400px;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+        }
+
+        button {
+            background: #00d4ff;
+            color: #1a1d29;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background: #00b8e6;
+        }
+
+        #status {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>Airspace Layer Test</h3>
+        <p style="font-size: 12px; margin: 10px 0;">Testing FAA airspace polygon rendering</p>
+
+        <label>Worker URL:</label><br>
+        <input type="text" id="workerUrl" value="https://dronescout-proxy.dronescout-api.workers.dev"
+               style="width: 100%; padding: 8px; margin: 5px 0; background: rgba(255,255,255,0.1);
+                      border: 1px solid rgba(255,255,255,0.3); color: white; border-radius: 4px;">
+
+        <div style="margin-top: 10px;">
+            <button onclick="loadChicago()">Load Chicago (O'Hare)</button>
+            <button onclick="loadCrystalLake()">Load Crystal Lake</button>
+            <button onclick="loadNYC()">Load NYC</button>
+        </div>
+
+        <div id="status"></div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        let map;
+        let airspaceLayers = {};
+        let layerControl;
+
+        // Initialize map
+        function initMap(lat, lng, zoom = 12) {
+            if (map) {
+                map.remove();
+            }
+
+            log(`📍 Initializing map at [${lat}, ${lng}]`);
+
+            map = L.map('map').setView([lat, lng], zoom);
+
+            const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Create empty layer groups
+            airspaceLayers = {
+                classB: L.layerGroup(),
+                classC: L.layerGroup(),
+                classD: L.layerGroup(),
+                classE: L.layerGroup()
+            };
+
+            // Add layer control
+            const baseMaps = {
+                "OpenStreetMap": osmLayer
+            };
+
+            const overlayMaps = {
+                "Class B Airspace": airspaceLayers.classB,
+                "Class C Airspace": airspaceLayers.classC,
+                "Class D Airspace": airspaceLayers.classD,
+                "Class E Airspace": airspaceLayers.classE
+            };
+
+            if (layerControl) {
+                map.removeControl(layerControl);
+            }
+
+            layerControl = L.control.layers(baseMaps, overlayMaps, {
+                position: 'topright',
+                collapsed: false
+            }).addTo(map);
+
+            log('✅ Map initialized with layer control');
+
+            // Load airspace data
+            loadAirspaceGeometry(lat, lng);
+        }
+
+        async function loadAirspaceGeometry(lat, lng) {
+            const workerUrl = document.getElementById('workerUrl').value;
+
+            if (!workerUrl) {
+                log('❌ Worker URL is required');
+                return;
+            }
+
+            log('🗺️ Loading airspace geometry...');
+            log(`📍 Center: [${lat.toFixed(4)}, ${lng.toFixed(4)}], Radius: 25km`);
+
+            const url = `${workerUrl}/api/airspace/geometry?lat=${lat}&lon=${lng}&radius=25000`;
+            log(`🔗 Fetching: ${url}`);
+
+            try {
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    log(`❌ API error: ${response.status} ${response.statusText}`);
+                    const errorText = await response.text();
+                    log(`Response: ${errorText}`);
+                    return;
+                }
+
+                const data = await response.json();
+                log('📦 Received data:', JSON.stringify({
+                    success: data.success,
+                    count: data.count,
+                    classes: {
+                        B: data.byClass?.B?.length || 0,
+                        C: data.byClass?.C?.length || 0,
+                        D: data.byClass?.D?.length || 0,
+                        E: data.byClass?.E?.length || 0
+                    }
+                }));
+
+                if (!data.success) {
+                    log(`❌ API returned success=false: ${data.error || data.message}`);
+                    return;
+                }
+
+                if (!data.byClass) {
+                    log('⚠️ No byClass data in response');
+                    return;
+                }
+
+                // Clear existing layers
+                Object.values(airspaceLayers).forEach(layer => layer.clearLayers());
+
+                // Style configurations
+                const styles = {
+                    B: { color: '#ff0000', fillColor: '#ff0000', fillOpacity: 0.15, weight: 2 },
+                    C: { color: '#ff00ff', fillColor: '#ff00ff', fillOpacity: 0.15, weight: 2 },
+                    D: { color: '#0000ff', fillColor: '#0000ff', fillOpacity: 0.15, weight: 2 },
+                    E: { color: '#00ff00', fillColor: '#00ff00', fillOpacity: 0.1, weight: 1, dashArray: '5, 5' }
+                };
+
+                // Process each airspace class
+                Object.keys(data.byClass).forEach(airspaceClass => {
+                    const features = data.byClass[airspaceClass];
+
+                    if (features.length === 0) {
+                        log(`⚪ Class ${airspaceClass}: No features`);
+                        return;
+                    }
+
+                    const layerKey = `class${airspaceClass}`;
+                    const layer = airspaceLayers[layerKey];
+
+                    if (!layer) {
+                        log(`❌ Layer not found for class${airspaceClass}`);
+                        return;
+                    }
+
+                    const style = styles[airspaceClass];
+                    log(`🔵 Processing Class ${airspaceClass}: ${features.length} features`);
+
+                    features.forEach((feature, idx) => {
+                        try {
+                            const geoJsonLayer = L.geoJSON(feature, {
+                                style: style,
+                                onEachFeature: function(feature, layer) {
+                                    const props = feature.properties;
+                                    const popupContent = `
+                                        <div style="min-width: 150px;">
+                                            <h4>Class ${props.CLASS_CODE} Airspace</h4>
+                                            <strong>${props.NAME_TXT || 'Unnamed'}</strong><br>
+                                            ${props.IDENT_TXT ? `ID: ${props.IDENT_TXT}<br>` : ''}
+                                            ${props.DISTVERTLOWER_VAL !== undefined ? `Floor: ${props.DISTVERTLOWER_VAL} ft MSL<br>` : ''}
+                                            ${props.DISTVERTUPPER_VAL !== undefined ? `Ceiling: ${props.DISTVERTUPPER_VAL} ft MSL` : ''}
+                                        </div>
+                                    `;
+                                    layer.bindPopup(popupContent);
+                                }
+                            });
+
+                            geoJsonLayer.addTo(layer);
+
+                            // CRITICAL: Also add the layer to the map immediately for visibility
+                            if (!map.hasLayer(layer)) {
+                                layer.addTo(map);
+                                log(`  ✓ Added layer to map: Class ${airspaceClass}`);
+                            }
+
+                        } catch (err) {
+                            log(`  ❌ Error adding feature ${idx + 1}: ${err.message}`);
+                        }
+                    });
+
+                    log(`✅ Class ${airspaceClass}: Added ${features.length} features (layer has ${layer.getLayers().length} total layers)`);
+                });
+
+                log('✅ Airspace geometry loading complete!');
+                log('💡 Use the layer control (top-right) to toggle visibility');
+
+            } catch (error) {
+                log(`❌ Error: ${error.message}`);
+                console.error(error);
+            }
+        }
+
+        function log(message) {
+            const status = document.getElementById('status');
+            const time = new Date().toLocaleTimeString();
+            status.innerHTML += `<div>[${time}] ${message}</div>`;
+            status.scrollTop = status.scrollHeight;
+            console.log(message);
+        }
+
+        function loadChicago() {
+            log('--- Loading Chicago (O\'Hare) ---');
+            document.getElementById('status').innerHTML = '';
+            initMap(41.9742, -87.9073, 10); // O'Hare Airport
+        }
+
+        function loadCrystalLake() {
+            log('--- Loading Crystal Lake, IL ---');
+            document.getElementById('status').innerHTML = '';
+            initMap(42.241, -88.316, 12);
+        }
+
+        function loadNYC() {
+            log('--- Loading NYC ---');
+            document.getElementById('status').innerHTML = '';
+            initMap(40.7128, -74.0060, 10);
+        }
+
+        // Initialize with Chicago by default
+        window.onload = function() {
+            loadChicago();
+        };
+    </script>
+</body>
+</html>
