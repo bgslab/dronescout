@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout V12.0 - Smart Spot Discovery</title>
+    <title>DroneScout V13.0 - Smart Spot Discovery</title>
     <!-- Build: 2025-10-31-23:50 UTC - FORCE RELOAD -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -1994,29 +1994,40 @@
 
                     console.log(`🚁 Searching for drone spots: ${radiusKm.toFixed(1)}km (${(radiusKm * 0.621371).toFixed(1)} mi) radius`);
 
-                    // V12.0: Check airspace first (runs in parallel with spot search)
+                    // V13.0: Check airspace classification and aircraft (runs in parallel with spot search)
                     const airspacePromise = checkAirspace(lat, lng, radiusKm);
+                    const faaAirspacePromise = checkFAAAirspace(lat, lng);
 
                     // PRIMARY METHOD: Foursquare Places Discovery
                     // Find ALL types of photo-worthy locations: urban, suburban, rural, nature
-                    const [foursquareResult, aircraftData] = await Promise.all([
+                    const [foursquareResult, aircraftData, faaData] = await Promise.all([
                         searchFoursquarePlaces(lat, lng, radiusKm, locationName),
-                        airspacePromise
+                        airspacePromise,
+                        faaAirspacePromise
                     ]);
 
                     if (foursquareResult.success && foursquareResult.spots.length > 0) {
                         console.log(`✅ Using ${foursquareResult.count} places from Foursquare`);
 
-                        // V12.0: Add airspace data to spots
-                        if (aircraftData && aircraftData.success) {
-                            foursquareResult.spots.forEach(spot => {
+                        // V13.0: Add both aircraft and FAA airspace data to spots
+                        foursquareResult.spots.forEach(spot => {
+                            // V12.0: Aircraft proximity status
+                            if (aircraftData && aircraftData.success) {
                                 spot.airspace = determineAirspaceStatus(
                                     spot.coordinates.lat,
                                     spot.coordinates.lng,
                                     aircraftData
                                 );
-                            });
-                        }
+                            }
+
+                            // V13.0: FAA airspace classification
+                            if (faaData && faaData.success && faaData.airspace) {
+                                spot.faaAirspace = faaData.airspace;
+                            }
+
+                            // V13.0: Calculate overall flight status (aircraft + FAA airspace)
+                            spot.overallStatus = determineOverallFlightStatus(spot.airspace, spot.faaAirspace);
+                        });
 
                         return foursquareResult.spots;
                     }
@@ -2028,17 +2039,28 @@
                     if (osmSpots && osmSpots.length > 0) {
                         console.log(`✅ Using ${osmSpots.length} spots from OpenStreetMap`);
 
-                        // V12.0: Add airspace data to OSM spots too
+                        // V13.0: Add both aircraft and FAA airspace data to OSM spots
                         const aircraftData = await airspacePromise;
-                        if (aircraftData && aircraftData.success) {
-                            osmSpots.forEach(spot => {
+                        const faaData = await faaAirspacePromise;
+
+                        osmSpots.forEach(spot => {
+                            // V12.0: Aircraft proximity
+                            if (aircraftData && aircraftData.success) {
                                 spot.airspace = determineAirspaceStatus(
                                     spot.coordinates.lat,
                                     spot.coordinates.lng,
                                     aircraftData
                                 );
-                            });
-                        }
+                            }
+
+                            // V13.0: FAA airspace classification
+                            if (faaData && faaData.success && faaData.airspace) {
+                                spot.faaAirspace = faaData.airspace;
+                            }
+
+                            // V13.0: Calculate overall flight status (aircraft + FAA airspace)
+                            spot.overallStatus = determineOverallFlightStatus(spot.airspace, spot.faaAirspace);
+                        });
 
                         return osmSpots;
                     }
@@ -2049,6 +2071,45 @@
                 } catch (error) {
                     console.error('Search error:', error);
                     return [];
+                }
+            }
+
+            /**
+             * V13.0: Check FAA airspace classification
+             * Returns official FAA airspace class and LAANC requirements
+             */
+            async function checkFAAAirspace(lat, lng) {
+                try {
+                    const workerUrl = state.syncSettings?.workerUrl;
+                    if (!workerUrl) {
+                        console.warn('⚠️ Worker URL not configured for airspace classification');
+                        return { success: false, airspace: null };
+                    }
+
+                    const url = `${workerUrl}/api/airspace/classification?lat=${lat}&lon=${lng}`;
+
+                    console.log(`🏛️ Checking FAA airspace classification...`);
+
+                    const response = await fetch(url);
+
+                    if (!response.ok) {
+                        console.warn('FAA Airspace API error:', response.status);
+                        return { success: false, airspace: null };
+                    }
+
+                    const data = await response.json();
+
+                    if (data.success && data.airspace) {
+                        const airspaceClass = data.airspace.class;
+                        const laanc = data.airspace.laancRequired ? 'Required' : 'Not Required';
+                        console.log(`🏛️ Airspace: Class ${airspaceClass} (LAANC: ${laanc})`);
+                    }
+
+                    return data;
+
+                } catch (error) {
+                    console.error('❌ FAA Airspace classification error:', error);
+                    return { success: false, airspace: null, error: error.message };
                 }
             }
 
@@ -2212,6 +2273,92 @@
                         closestAircraft: null
                     };
                 }
+            }
+
+            /**
+             * V13.0: Determine overall flight status combining aircraft + FAA airspace
+             * Returns the most restrictive status from both factors
+             */
+            function determineOverallFlightStatus(aircraftStatus, faaAirspace) {
+                // If no data available, return unknown status
+                if (!aircraftStatus && !faaAirspace) {
+                    return {
+                        status: 'unknown',
+                        message: 'Airspace data unavailable',
+                        factors: []
+                    };
+                }
+
+                const factors = [];
+                let overallStatus = 'clear';
+                let messages = [];
+
+                // Factor 1: Aircraft proximity
+                if (aircraftStatus) {
+                    factors.push({
+                        type: 'aircraft',
+                        status: aircraftStatus.status,
+                        message: aircraftStatus.message
+                    });
+
+                    if (aircraftStatus.status === 'restricted') {
+                        overallStatus = 'restricted';
+                        messages.push(aircraftStatus.message);
+                    } else if (aircraftStatus.status === 'caution' && overallStatus !== 'restricted') {
+                        overallStatus = 'caution';
+                        messages.push(aircraftStatus.message);
+                    } else if (aircraftStatus.status === 'clear') {
+                        messages.push('✈️ ' + aircraftStatus.message);
+                    }
+                }
+
+                // Factor 2: FAA Airspace classification
+                if (faaAirspace) {
+                    const airspaceStatus = faaAirspace.laancRequired ?
+                        (faaAirspace.class === 'B' ? 'restricted' : 'caution') :
+                        'clear';
+
+                    factors.push({
+                        type: 'faa_airspace',
+                        status: airspaceStatus,
+                        class: faaAirspace.class,
+                        laancRequired: faaAirspace.laancRequired,
+                        message: `Class ${faaAirspace.class} airspace${faaAirspace.laancRequired ? ' - LAANC authorization required' : ''}`
+                    });
+
+                    // Class B is most restrictive (requires ATC clearance)
+                    if (faaAirspace.class === 'B' && faaAirspace.laancRequired) {
+                        overallStatus = 'restricted';
+                        messages.push(`🏛️ Class B airspace - ATC authorization required via LAANC`);
+                    }
+                    // Class C/D/E requires LAANC but can be approved
+                    else if (faaAirspace.laancRequired && overallStatus !== 'restricted') {
+                        overallStatus = 'caution';
+                        messages.push(`🏛️ Class ${faaAirspace.class} - LAANC authorization required`);
+                    }
+                    // Class G is uncontrolled
+                    else if (faaAirspace.class === 'G') {
+                        messages.push(`🏛️ Class G (uncontrolled airspace)`);
+                    }
+                }
+
+                // Compile final message
+                let finalMessage = '';
+                if (overallStatus === 'restricted') {
+                    finalMessage = '🚫 DO NOT FLY: ' + messages.join(' • ');
+                } else if (overallStatus === 'caution') {
+                    finalMessage = '⚠️ AUTHORIZATION REQUIRED: ' + messages.join(' • ');
+                } else {
+                    finalMessage = '✅ CLEAR TO FLY: ' + messages.join(' • ');
+                }
+
+                return {
+                    status: overallStatus,
+                    message: finalMessage,
+                    factors: factors,
+                    aircraft: aircraftStatus?.aircraft || [],
+                    faaAirspace: faaAirspace
+                };
             }
 
             /**
@@ -4849,6 +4996,26 @@
                                             </span>
                                         </div>
                                         ${renderWeatherCard(spot.weather)}
+                                        ${spot.overallStatus ? `
+                                            <div style="margin-top: 10px; padding: 10px; border-radius: 8px; background: ${
+                                                spot.overallStatus.status === 'clear' ? '#d1fae5' :
+                                                spot.overallStatus.status === 'caution' ? '#fef3c7' : '#fee2e2'
+                                            }; border-left: 4px solid ${
+                                                spot.overallStatus.status === 'clear' ? '#10b981' :
+                                                spot.overallStatus.status === 'caution' ? '#f59e0b' : '#ef4444'
+                                            };">
+                                                <div style="font-size: 12px; font-weight: 700; color: ${
+                                                    spot.overallStatus.status === 'clear' ? '#065f46' :
+                                                    spot.overallStatus.status === 'caution' ? '#92400e' : '#991b1b'
+                                                }; margin-bottom: 4px;">
+                                                    ${spot.overallStatus.status === 'clear' ? '✅ CLEAR TO FLY' :
+                                                      spot.overallStatus.status === 'caution' ? '⚠️ AUTHORIZATION REQUIRED' : '🚫 RESTRICTED'}
+                                                </div>
+                                                <div style="font-size: 11px; color: #666; line-height: 1.4;">
+                                                    ${spot.overallStatus.message.replace(/^(✅ CLEAR TO FLY|⚠️ AUTHORIZATION REQUIRED|🚫 DO NOT FLY): /, '')}
+                                                </div>
+                                            </div>
+                                        ` : ''}
                                         ${spot.intelligence ? `
                                             <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; font-size: 11px;">
                                                 ${spot.intelligence.access ? `
@@ -4917,6 +5084,20 @@
                                                         }
                                                         ${spot.airspace.status === 'clear' ? 'Clear Airspace' :
                                                           spot.airspace.status === 'caution' ? 'Airspace Caution' : 'Aircraft Nearby'}
+                                                    </span>
+                                                ` : ''}
+                                                ${spot.faaAirspace ? `
+                                                    <span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 12px; background: ${
+                                                        spot.faaAirspace.class === 'G' ? '#d1fae5' :
+                                                        spot.faaAirspace.class === 'E' ? '#dbeafe' :
+                                                        spot.faaAirspace.laancRequired ? '#fee2e2' : '#fef3c7'
+                                                    }; color: ${
+                                                        spot.faaAirspace.class === 'G' ? '#065f46' :
+                                                        spot.faaAirspace.class === 'E' ? '#1e3a8a' :
+                                                        spot.faaAirspace.laancRequired ? '#991b1b' : '#92400e'
+                                                    }; font-weight: 600;">
+                                                        ${spot.faaAirspace.laancRequired ? '🏛️⚠️' : '🏛️✅'}
+                                                        Class ${spot.faaAirspace.class}${spot.faaAirspace.laancRequired ? ' (LAANC)' : ''}
                                                     </span>
                                                 ` : ''}
                                             </div>
@@ -5070,6 +5251,49 @@
                                 <div><strong>Nearest Airport:</strong> ${spot.airspaceDetails.nearestAirport}</div>
                             </div>
                         `}
+
+                        ${spot.faaAirspace ? `
+                            <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin: 20px 0 12px 0;">🏛️ FAA Airspace Classification</h3>
+                            <div class="risk-category" style="border-left: 3px solid ${
+                                spot.faaAirspace.class === 'G' ? '#28a745' :
+                                spot.faaAirspace.class === 'E' ? '#3b82f6' :
+                                spot.faaAirspace.laancRequired ? '#dc3545' : '#f59e0b'
+                            };">
+                                <div style="margin-bottom: 10px;">
+                                    <strong>Airspace Class:</strong>
+                                    <span style="color: ${
+                                        spot.faaAirspace.class === 'G' ? '#28a745' :
+                                        spot.faaAirspace.class === 'E' ? '#3b82f6' :
+                                        spot.faaAirspace.laancRequired ? '#dc3545' : '#f59e0b'
+                                    }; font-weight: 700; font-size: 18px;">
+                                        Class ${spot.faaAirspace.class}
+                                    </span>
+                                </div>
+                                <div style="margin-bottom: 10px;"><strong>Name:</strong> ${spot.faaAirspace.name}</div>
+                                ${spot.faaAirspace.airport ? `
+                                    <div style="margin-bottom: 10px;"><strong>Airport:</strong> ${spot.faaAirspace.airport}</div>
+                                ` : ''}
+                                <div style="margin-bottom: 10px;">
+                                    <strong>Altitude Range:</strong>
+                                    ${spot.faaAirspace.floor} ${spot.faaAirspace.floorUnit} ${spot.faaAirspace.floorReference} to
+                                    ${spot.faaAirspace.ceiling ? `${spot.faaAirspace.ceiling} ${spot.faaAirspace.ceilingUnit} ${spot.faaAirspace.ceilingReference}` : 'unlimited'}
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <strong>LAANC Authorization:</strong>
+                                    <span style="color: ${spot.faaAirspace.laancRequired ? '#dc3545' : '#28a745'}; font-weight: 700;">
+                                        ${spot.faaAirspace.laancRequired ? '⚠️ REQUIRED' : '✅ NOT REQUIRED'}
+                                    </span>
+                                </div>
+                                ${spot.faaAirspace.restrictions && spot.faaAirspace.restrictions.length > 0 ? `
+                                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+                                        <strong>Requirements & Restrictions:</strong>
+                                        <ul style="margin: 10px 0 0 20px; font-size: 13px; color: #666; line-height: 1.6;">
+                                            ${spot.faaAirspace.restrictions.map(r => `<li>${r}</li>`).join('')}
+                                        </ul>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        ` : ''}
 
                         <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin: 20px 0 12px 0;">📋 Regulations</h3>
                         ${spot.regulations.map(reg => `
