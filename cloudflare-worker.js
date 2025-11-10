@@ -6,7 +6,7 @@
 const SKYDIO_API_BASE = 'https://api.skydio.com';
 const GOOGLE_STREETVIEW_BASE = 'https://maps.googleapis.com/maps/api/streetview';
 const GOOGLE_PLACES_BASE = 'https://maps.googleapis.com/maps/api/place';
-const OPENWEATHER_API_BASE = 'https://api.openweathermap.org/data/2.5';
+const OPENWEATHER_API_BASE = 'https://api.openweathermap.org/data/3.0';
 const FOURSQUARE_API_BASE = 'https://places-api.foursquare.com';
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -741,7 +741,8 @@ async function handleCurrentWeather(lat, lon, units, apiKey) {
     }, 500);
   }
 
-  const weatherUrl = `${OPENWEATHER_API_BASE}/weather?lat=${lat}&lon=${lon}&units=${units}&appid=${apiKey}`;
+  // One Call API 3.0 - exclude minutely, hourly, daily, alerts to reduce response size
+  const weatherUrl = `${OPENWEATHER_API_BASE}/onecall?lat=${lat}&lon=${lon}&units=${units}&exclude=minutely,hourly,daily,alerts&appid=${apiKey}`;
 
   try {
     const response = await fetch(weatherUrl);
@@ -757,45 +758,52 @@ async function handleCurrentWeather(lat, lon, units, apiKey) {
     }
 
     const data = await response.json();
+    const current = data.current;
 
     // Parse and format weather data for drone flying assessment
     const weather = {
       // Basic conditions
-      temp: Math.round(data.main.temp),
+      temp: Math.round(current.temp),
       tempUnit: units === 'imperial' ? '°F' : '°C',
-      feelsLike: Math.round(data.main.feels_like),
-      conditions: data.weather[0].main, // e.g., "Clear", "Clouds", "Rain"
-      description: data.weather[0].description, // e.g., "clear sky", "scattered clouds"
-      icon: data.weather[0].icon,
+      feelsLike: Math.round(current.feels_like),
+      conditions: current.weather[0].main, // e.g., "Clear", "Clouds", "Rain"
+      description: current.weather[0].description, // e.g., "clear sky", "scattered clouds"
+      icon: current.weather[0].icon,
 
       // Wind (critical for drone flying)
-      windSpeed: Math.round(data.wind.speed * 10) / 10,
+      windSpeed: Math.round(current.wind_speed * 10) / 10,
       windSpeedUnit: units === 'imperial' ? 'mph' : 'm/s',
-      windDeg: data.wind.deg || 0,
-      windGust: data.wind.gust ? Math.round(data.wind.gust * 10) / 10 : null,
+      windDeg: current.wind_deg || 0,
+      windGust: current.wind_gust ? Math.round(current.wind_gust * 10) / 10 : null,
 
       // Visibility (critical for VLOS requirements)
-      visibility: data.visibility ? Math.round(data.visibility * 0.000621371 * 10) / 10 : null, // meters to miles
+      visibility: current.visibility ? Math.round(current.visibility * 0.000621371 * 10) / 10 : null, // meters to miles
       visibilityUnit: 'mi',
-      visibilityMeters: data.visibility,
+      visibilityMeters: current.visibility,
 
       // Other conditions
-      humidity: data.main.humidity,
-      pressure: data.main.pressure,
-      clouds: data.clouds.all, // cloud coverage percentage
+      humidity: current.humidity,
+      pressure: current.pressure,
+      clouds: current.clouds, // cloud coverage percentage
+      uvi: current.uvi || null, // UV index
 
       // Location info
-      location: data.name,
       timezone: data.timezone,
-      sunrise: data.sys.sunrise,
-      sunset: data.sys.sunset,
+      sunrise: current.sunrise,
+      sunset: current.sunset,
 
       // Timestamp
-      timestamp: data.dt,
+      timestamp: current.dt,
       fetchedAt: new Date().toISOString(),
 
-      // Flying conditions assessment
-      flyingConditions: assessFlyingConditions(data, units)
+      // Flying conditions assessment (adapted for One Call API 3.0 structure)
+      flyingConditions: assessFlyingConditions({
+        wind: { speed: current.wind_speed, gust: current.wind_gust },
+        visibility: current.visibility,
+        weather: current.weather,
+        main: { temp: current.temp },
+        clouds: { all: current.clouds }
+      }, units)
     };
 
     return jsonResponse({
