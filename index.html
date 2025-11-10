@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout V13.0 - Smart Spot Discovery</title>
+    <title>DroneScout V13.3 - Smart Spot Discovery</title>
     <!-- Build: 2025-10-31-23:50 UTC - FORCE RELOAD -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -1046,7 +1046,7 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout V12.0</h1>
+            <h1>🚁 DroneScout V13.3</h1>
             <p>Plan • Discover • Map • Assess • Fly • Sync • Analyze</p>
         </div>
 
@@ -3642,6 +3642,91 @@
                 return baseScore;
             }
 
+            /**
+             * V13.2: Calculate dynamic risk score based on real-time conditions
+             * Combines weather, airspace, obstacles, and regulations into comprehensive 0-100 score
+             * Higher score = safer to fly
+             */
+            function calculateDynamicRiskScore(spot) {
+                let score = 0;
+                const breakdown = {
+                    weather: 0,
+                    airspace: 0,
+                    obstacles: 0,
+                    regulations: 0
+                };
+
+                // Factor 1: Weather Conditions (0-35 points)
+                if (spot.weather && spot.weather.flyingConditions) {
+                    const weatherRisk = spot.weather.flyingConditions.risk;
+                    if (weatherRisk === 'low') {
+                        breakdown.weather = 35;
+                    } else if (weatherRisk === 'medium') {
+                        breakdown.weather = 20;
+                    } else if (weatherRisk === 'high') {
+                        breakdown.weather = 0;
+                    } else {
+                        breakdown.weather = 25; // Unknown, assume caution
+                    }
+                } else {
+                    breakdown.weather = 25; // No data, assume moderate
+                }
+
+                // Factor 2: Airspace Status (0-25 points)
+                if (spot.overallStatus) {
+                    if (spot.overallStatus.status === 'clear') {
+                        breakdown.airspace = 25;
+                    } else if (spot.overallStatus.status === 'caution') {
+                        breakdown.airspace = 12;
+                    } else if (spot.overallStatus.status === 'restricted') {
+                        breakdown.airspace = 0;
+                    } else {
+                        breakdown.airspace = 15; // Unknown
+                    }
+                } else {
+                    breakdown.airspace = 15; // No data
+                }
+
+                // Factor 3: Obstacles (0-20 points)
+                if (spot.intelligence && spot.intelligence.obstacles) {
+                    const obstacleRisk = spot.intelligence.obstacles.risk;
+                    if (obstacleRisk === 'low') {
+                        breakdown.obstacles = 20;
+                    } else if (obstacleRisk === 'medium') {
+                        breakdown.obstacles = 10;
+                    } else if (obstacleRisk === 'high') {
+                        breakdown.obstacles = 0;
+                    } else {
+                        breakdown.obstacles = 15;
+                    }
+                } else {
+                    breakdown.obstacles = 15; // No data
+                }
+
+                // Factor 4: Local Regulations (0-20 points)
+                if (spot.localRegulations) {
+                    if (spot.localRegulations.status === 'allowed') {
+                        breakdown.regulations = 20;
+                    } else if (spot.localRegulations.status === 'permit_required') {
+                        breakdown.regulations = 10;
+                    } else if (spot.localRegulations.status === 'prohibited') {
+                        breakdown.regulations = 0;
+                    } else {
+                        breakdown.regulations = 15;
+                    }
+                } else {
+                    breakdown.regulations = 15; // No data
+                }
+
+                // Calculate total score (max 100)
+                score = breakdown.weather + breakdown.airspace + breakdown.obstacles + breakdown.regulations;
+
+                return {
+                    score: Math.max(0, Math.min(100, score)),
+                    breakdown: breakdown
+                };
+            }
+
             // V9.0: Calculate preference match score for spot ranking
             function calculatePreferenceMatch(shotTypes, preferences) {
                 if (!shotTypes || !preferences) return 50;
@@ -4672,6 +4757,93 @@
                 return html;
             }
 
+            /**
+             * V13.3: Render media gallery for flight photos/videos
+             */
+            function renderMediaGallery(mediaDetails, flightId) {
+                if (!mediaDetails || mediaDetails.length === 0) {
+                    return '<div style="text-align: center; color: #666;">No media files found for this flight</div>';
+                }
+
+                // Separate photos and videos
+                const photos = mediaDetails.filter(m => m.fileType === 'PHOTO');
+                const videos = mediaDetails.filter(m => m.fileType === 'VIDEO');
+                const logs = mediaDetails.filter(m => m.fileType === 'LOG');
+
+                let html = '';
+
+                // Photos section
+                if (photos.length > 0) {
+                    html += `
+                        <div style="margin-bottom: 16px;">
+                            <h4 style="font-size: 14px; color: #1e3c72; margin-bottom: 8px;">📷 Photos (${photos.length})</h4>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px;">
+                                ${photos.map(photo => `
+                                    <div style="position: relative; background: #e9ecef; border-radius: 6px; overflow: hidden; aspect-ratio: 16/9;">
+                                        <a href="${photo.downloadUrl}" target="_blank" style="display: block; width: 100%; height: 100%; position: relative;">
+                                            <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                                <div style="text-align: center;">
+                                                    <div style="font-size: 24px;">📷</div>
+                                                    <div style="font-size: 11px; margin-top: 4px;">${(photo.sizeBytes / 1024 / 1024).toFixed(1)}MB</div>
+                                                </div>
+                                            </div>
+                                        </a>
+                                        <div style="position: absolute; top: 4px; right: 4px;">
+                                            <a href="${photo.downloadUrl}" download style="background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none;">
+                                                ⬇️
+                                            </a>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Videos section
+                if (videos.length > 0) {
+                    html += `
+                        <div style="margin-bottom: 16px;">
+                            <h4 style="font-size: 14px; color: #1e3c72; margin-bottom: 8px;">🎥 Videos (${videos.length})</h4>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                ${videos.map(video => `
+                                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: white; border-radius: 6px; border: 1px solid #e0e0e0;">
+                                        <div style="flex: 1;">
+                                            <div style="font-weight: 600; color: #333; font-size: 13px;">${video.fileName || 'Video'}</div>
+                                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                                ${(video.sizeBytes / 1024 / 1024).toFixed(1)}MB
+                                            </div>
+                                        </div>
+                                        <a href="${video.downloadUrl}" target="_blank" class="btn-small" style="margin: 0;">
+                                            ⬇️ Download
+                                        </a>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Logs section (optional, collapsed)
+                if (logs.length > 0) {
+                    html += `
+                        <details style="margin-top: 8px;">
+                            <summary style="cursor: pointer; font-size: 12px; color: #666;">📋 Flight Logs (${logs.length})</summary>
+                            <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px;">
+                                ${logs.map(log => `
+                                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                                        <div style="font-size: 11px; color: #666;">${log.fileName}</div>
+                                        <a href="${log.downloadUrl}" download style="font-size: 11px; color: #1e3c72;">⬇️</a>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </details>
+                    `;
+                }
+
+                return html;
+            }
+
             // OLD COMPLEX FUNCTION - REMOVED
             function renderAllTelemetryStats_OLD(stats) {
                 // Field display configuration with units and formatting
@@ -4906,7 +5078,10 @@
                     if (spot.coordinates && spot.coordinates.lat && spot.coordinates.lng) {
                         markerIndex++;
                         console.log(`Adding marker ${markerIndex} for ${spot.name} at [${spot.coordinates.lat}, ${spot.coordinates.lng}]`);
-                        const riskScore = getAdjustedRiskScore(spot);
+
+                        // V13.2: Use dynamic risk scoring for marker colors
+                        const dynamicRisk = calculateDynamicRiskScore(spot);
+                        const riskScore = Math.round(dynamicRisk.score);
                         const riskClass = riskScore >= 75 ? 'high' : riskScore >= 50 ? 'medium' : 'low';
                         const markerColor = riskScore >= 75 ? '#28a745' : riskScore >= 50 ? '#ffc107' : '#dc3545';
 
@@ -5226,11 +5401,17 @@
                             </div>
                         ` : displaySpots.map((spot, index) => {
                             const markerNumber = index + 1; // 1-indexed marker numbers
-                            const riskScore = spot.adjustedScore || spot.riskScore;
+
+                            // V13.2: Use dynamic risk scoring based on real-time conditions
+                            const dynamicRisk = calculateDynamicRiskScore(spot);
+                            const riskScore = Math.round(dynamicRisk.score);
                             const riskClass = riskScore >= 75 ? 'high' : riskScore >= 50 ? 'medium' : 'low';
                             const riskLabel = riskScore >= 75 ? 'Clear' : riskScore >= 50 ? 'Caution' : 'Review';
                             const riskIcon = riskScore >= 75 ? '✓' : '⚠';
                             const markerColor = riskScore >= 75 ? '#28a745' : riskScore >= 50 ? '#ffc107' : '#dc3545';
+
+                            // Build tooltip showing risk breakdown
+                            const riskTooltip = `Risk Breakdown:\\nWeather: ${dynamicRisk.breakdown.weather}/35\\nAirspace: ${dynamicRisk.breakdown.airspace}/25\\nObstacles: ${dynamicRisk.breakdown.obstacles}/20\\nRegulations: ${dynamicRisk.breakdown.regulations}/20`;
 
                             // V9.0: Match percentage and color
                             const matchPercentage = spot.matchPercentage || 50;
@@ -5247,7 +5428,7 @@
                             return `
                                 <div class="spot-card" data-spot-id="${spot.id}">
                                     <img src="${spot.imageUrl}" alt="${spot.name}" class="spot-image">
-                                    <div class="risk-badge ${riskClass}">
+                                    <div class="risk-badge ${riskClass}" title="${riskTooltip}">
                                         ${riskIcon} ${riskScore} ${riskLabel}
                                     </div>
                                     <div style="position: absolute; top: 52px; right: 12px; background: ${markerColor}; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.3); border: 2px solid white; font-size: 12px; z-index: 5;">
@@ -5414,7 +5595,9 @@
                 const spot = state.spots.find(s => s.id === state.selectedSpot);
                 if (!spot) return '';
 
-                const riskScore = getAdjustedRiskScore(spot);
+                // V13.2: Use dynamic risk scoring in detail view
+                const dynamicRisk = calculateDynamicRiskScore(spot);
+                const riskScore = Math.round(dynamicRisk.score);
                 const isFavorite = state.favorites.includes(spot.id);
 
                 return `
@@ -5908,6 +6091,29 @@
                                                     </button>
                                                 </div>
                                                 ` : ''}
+                                            </div>
+                                        </details>
+
+                                        <!-- V13.3: Flight Media (Photos/Videos) -->
+                                        <details style="margin-top: 12px;" class="media-details" data-flight-id="${flight.id}">
+                                            <summary style="cursor: pointer; padding: 8px 12px; background: #f0f4f8; border-radius: 6px; font-weight: 600; color: #1e3c72; user-select: none;">
+                                                📸 Flight Media ${flight.mediaDetails && flight.mediaDetails.length > 0 ? `(${flight.mediaDetails.length})` : '(Click to load)'}
+                                            </summary>
+                                            <div style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-top: 8px;">
+                                                <div class="media-container-${flight.id}">
+                                                    ${flight.mediaDetails && flight.mediaDetails.length > 0 ? `
+                                                        ${renderMediaGallery(flight.mediaDetails, flight.id)}
+                                                    ` : `
+                                                        <div style="text-align: center; padding: 20px; color: #666;">
+                                                            <div class="media-loading-${flight.id}" style="display: none;">
+                                                                <span class="spinner"></span> Loading media...
+                                                            </div>
+                                                            <div class="media-placeholder-${flight.id}">
+                                                                Click to load photos and videos from this flight
+                                                            </div>
+                                                        </div>
+                                                    `}
+                                                </div>
                                             </div>
                                         </details>
                                     ` : ''}
@@ -6627,6 +6833,54 @@
                                 mapContainer.classList.add('map-loaded');
                             } else {
                                 console.log('Map already loaded');
+                            }
+                        }
+                    };
+
+                    details.addEventListener('toggle', details._toggleHandler);
+                });
+
+                // V13.3: Media details handlers - load media when <details> is opened
+                const mediaDetails = document.querySelectorAll('.media-details');
+                mediaDetails.forEach(details => {
+                    // Remove existing listener if any to prevent duplicates
+                    details.removeEventListener('toggle', details._toggleHandler);
+
+                    // Create and store handler
+                    details._toggleHandler = async function(e) {
+                        if (this.open) {
+                            const flightId = this.dataset.flightId;
+                            const mediaContainer = document.querySelector(`.media-container-${flightId}`);
+                            const loadingEl = document.querySelector(`.media-loading-${flightId}`);
+                            const placeholderEl = document.querySelector(`.media-placeholder-${flightId}`);
+
+                            console.log('Media details opened for flight:', flightId);
+
+                            // Check if media already loaded
+                            const flight = state.flights.find(f => f.id === flightId);
+                            if (flight && !flight.mediaDetails) {
+                                console.log('Loading flight media...');
+
+                                // Show loading spinner
+                                if (loadingEl && placeholderEl) {
+                                    placeholderEl.style.display = 'none';
+                                    loadingEl.style.display = 'block';
+                                }
+
+                                try {
+                                    // Call existing loadSyncedFlightData function
+                                    await loadSyncedFlightData(flightId);
+
+                                    // Re-render to show media
+                                    render();
+                                } catch (error) {
+                                    console.error('Error loading media:', error);
+                                    if (mediaContainer) {
+                                        mediaContainer.innerHTML = '<div style="text-align: center; color: #dc3545; padding: 20px;">Failed to load media. Please try again.</div>';
+                                    }
+                                }
+                            } else {
+                                console.log('Media already loaded or not synced flight');
                             }
                         }
                     };
