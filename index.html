@@ -4961,7 +4961,12 @@
                         <h2 style="font-size: 18px; font-weight: 700; color: #1e3c72; margin-bottom: 15px;">
                             Flight History (${state.flights.length})
                         </h2>
-                        ${state.flights.slice().reverse().map(flight => {
+                        ${state.flights.slice().sort((a, b) => {
+                            // Sort by date descending (newest first)
+                            const dateA = new Date(a.created_at || a.date);
+                            const dateB = new Date(b.created_at || b.date);
+                            return dateB - dateA;
+                        }).map(flight => {
                             // V7.1 Debug: Log flight sync status
                             console.log('Flight:', flight.id, 'synced:', flight.synced, 'type:', flight.type);
                             const rating = state.ratings.find(r => r.flightId === flight.id);
@@ -5507,6 +5512,8 @@
                         document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
                         e.target.classList.add('active');
                         state.currentTab = e.target.dataset.tab;
+                        // Clear selected spot when switching tabs
+                        state.selectedSpot = null;
                         render();
                     });
                 });
