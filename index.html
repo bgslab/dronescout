@@ -2025,8 +2025,8 @@
                                 spot.faaAirspace = faaData.airspace;
                             }
 
-                            // V13.0: Calculate overall flight status (aircraft + FAA airspace)
-                            spot.overallStatus = determineOverallFlightStatus(spot.airspace, spot.faaAirspace);
+                            // V13.1: Calculate overall flight status (aircraft + FAA airspace + local regulations)
+                            spot.overallStatus = determineOverallFlightStatus(spot.airspace, spot.faaAirspace, spot.localRegulations);
                         });
 
                         return foursquareResult.spots;
@@ -2058,8 +2058,8 @@
                                 spot.faaAirspace = faaData.airspace;
                             }
 
-                            // V13.0: Calculate overall flight status (aircraft + FAA airspace)
-                            spot.overallStatus = determineOverallFlightStatus(spot.airspace, spot.faaAirspace);
+                            // V13.1: Calculate overall flight status (aircraft + FAA airspace + local regulations)
+                            spot.overallStatus = determineOverallFlightStatus(spot.airspace, spot.faaAirspace, spot.localRegulations);
                         });
 
                         return osmSpots;
@@ -2279,9 +2279,9 @@
              * V13.0: Determine overall flight status combining aircraft + FAA airspace
              * Returns the most restrictive status from both factors
              */
-            function determineOverallFlightStatus(aircraftStatus, faaAirspace) {
+            function determineOverallFlightStatus(aircraftStatus, faaAirspace, localRegulations = null) {
                 // If no data available, return unknown status
-                if (!aircraftStatus && !faaAirspace) {
+                if (!aircraftStatus && !faaAirspace && !localRegulations) {
                     return {
                         status: 'unknown',
                         message: 'Airspace data unavailable',
@@ -2342,6 +2342,31 @@
                     }
                 }
 
+                // V13.1: Factor 3: Local Regulations
+                if (localRegulations) {
+                    const regulationStatus = localRegulations.status === 'prohibited' ? 'restricted' :
+                                           localRegulations.status === 'permit_required' ? 'caution' : 'clear';
+
+                    factors.push({
+                        type: 'local_regulations',
+                        status: regulationStatus,
+                        restrictions: localRegulations.restrictions,
+                        message: localRegulations.restrictions.length > 0 ?
+                            localRegulations.restrictions[0].name : 'No local restrictions'
+                    });
+
+                    // Prohibited areas override everything
+                    if (localRegulations.status === 'prohibited') {
+                        overallStatus = 'restricted';
+                        messages.push(`🚫 ${localRegulations.restrictions[0].reason}`);
+                    }
+                    // Permit required is a caution
+                    else if (localRegulations.status === 'permit_required' && overallStatus !== 'restricted') {
+                        overallStatus = 'caution';
+                        messages.push(`📋 Permit required for ${localRegulations.restrictions[0].name}`);
+                    }
+                }
+
                 // Compile final message
                 let finalMessage = '';
                 if (overallStatus === 'restricted') {
@@ -2357,7 +2382,8 @@
                     message: finalMessage,
                     factors: factors,
                     aircraft: aircraftStatus?.aircraft || [],
-                    faaAirspace: faaAirspace
+                    faaAirspace: faaAirspace,
+                    localRegulations: localRegulations
                 };
             }
 
@@ -2437,10 +2463,11 @@
                         const imageUrl = place.photoUrl || null;
                         const imageSource = place.photoUrl ? 'foursquare' : 'none';
 
-                        // Fetch weather and obstacles in parallel
-                        const [weatherData, obstacleData] = await Promise.all([
+                        // V13.1: Fetch weather, obstacles, and local regulations in parallel
+                        const [weatherData, obstacleData, regulationData] = await Promise.all([
                             fetchCurrentWeather(place.lat, place.lng, 'imperial'),
-                            detectObstacles(place.lat, place.lng, 500).catch(() => ({ count: 0, types: [], risk: 'low' }))
+                            detectObstacles(place.lat, place.lng, 500).catch(() => ({ count: 0, types: [], obstacles: [], risk: 'low' })),
+                            checkLocalRegulations(place.lat, place.lng, locationName).catch(() => ({ restrictions: [], compliant: true, requiresPermit: false, status: 'allowed' }))
                         ]);
 
                         // Build description from Foursquare data
@@ -2500,7 +2527,8 @@
                                 populationDensity: { density: 'unknown' },
                                 cellCoverage: 'good',
                                 foursquareScore: place.droneScore
-                            }
+                            },
+                            localRegulations: regulationData  // V13.1: Local regulations data
                         });
 
                     } catch (error) {
@@ -2706,6 +2734,221 @@
                     console.warn('Obstacle detection error:', error);
                     return { count: 0, types: [], obstacles: [], risk: 'low' };
                 }
+            }
+
+            /**
+             * V13.1: Check for local drone regulations (national parks, state parks, restricted areas)
+             * Uses OpenStreetMap boundary data + known restriction rules
+             */
+            async function checkLocalRegulations(lat, lng, locationName) {
+                try {
+                    // Query OpenStreetMap for protected areas and park boundaries
+                    const query = `
+                        [out:json][timeout:3];
+                        (
+                          // National Parks
+                          relation["boundary"="national_park"](around:100,${lat},${lng});
+                          way["boundary"="national_park"](around:100,${lat},${lng});
+
+                          // Protected Areas
+                          relation["boundary"="protected_area"](around:100,${lat},${lng});
+                          way["boundary"="protected_area"](around:100,${lat},${lng});
+
+                          // State Parks
+                          relation["leisure"="nature_reserve"](around:100,${lat},${lng});
+                          way["leisure"="nature_reserve"](around:100,${lat},${lng});
+
+                          // Wilderness Areas
+                          relation["protection_title"="Wilderness Area"](around:100,${lat},${lng});
+
+                          // Military/Restricted
+                          way["landuse"="military"](around:100,${lat},${lng});
+                          relation["landuse"="military"](around:100,${lat},${lng});
+                        );
+                        out tags;
+                    `;
+
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+                    const response = await fetch('https://overpass-api.de/api/interpreter', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: 'data=' + encodeURIComponent(query),
+                        signal: controller.signal
+                    });
+
+                    clearTimeout(timeoutId);
+
+                    if (!response.ok) {
+                        return { restrictions: [], compliant: true, requiresPermit: false };
+                    }
+
+                    const data = await response.json();
+                    const restrictions = [];
+                    let requiresPermit = false;
+                    let prohibited = false;
+
+                    // Process found boundaries
+                    data.elements.forEach(el => {
+                        if (!el.tags) return;
+
+                        // National Park - PROHIBITED
+                        if (el.tags.boundary === 'national_park') {
+                            restrictions.push({
+                                type: 'national_park',
+                                name: el.tags.name || 'National Park',
+                                status: 'prohibited',
+                                authority: 'National Park Service',
+                                rule: '36 CFR 1.5 - Drones prohibited in all NPS areas',
+                                penalty: 'Fines up to $27,500, possible criminal charges',
+                                reason: 'Takeoff, landing, and operation banned since 2014'
+                            });
+                            prohibited = true;
+                        }
+
+                        // Wilderness Area - PROHIBITED
+                        if (el.tags.protection_title?.includes('Wilderness') ||
+                            el.tags.protect_class === '1b') {
+                            restrictions.push({
+                                type: 'wilderness',
+                                name: el.tags.name || 'Wilderness Area',
+                                status: 'prohibited',
+                                authority: 'U.S. Forest Service / BLM',
+                                rule: 'Wilderness Act of 1964 Section 4(c) - Motorized equipment prohibited',
+                                penalty: 'Federal violation, fines and possible prosecution',
+                                reason: 'Congressionally designated Wilderness Area'
+                            });
+                            prohibited = true;
+                        }
+
+                        // State Park / Nature Reserve - PERMIT REQUIRED
+                        if (el.tags.leisure === 'nature_reserve' ||
+                            el.tags.boundary === 'protected_area') {
+                            const isStatePark = el.tags.name?.includes('State Park') ||
+                                               el.tags.operator?.includes('State Parks');
+                            if (isStatePark) {
+                                restrictions.push({
+                                    type: 'state_park',
+                                    name: el.tags.name || 'State Park',
+                                    status: 'permit_required',
+                                    authority: 'State Parks Department',
+                                    rule: 'State park regulations - permit required for UAS operations',
+                                    penalty: 'Trespass charges, citation, or expulsion from park',
+                                    reason: 'Contact local State Park District for permit application'
+                                });
+                                requiresPermit = true;
+                            }
+                        }
+
+                        // Military Area - PROHIBITED
+                        if (el.tags.landuse === 'military') {
+                            restrictions.push({
+                                type: 'military',
+                                name: el.tags.name || 'Military Installation',
+                                status: 'prohibited',
+                                authority: 'Department of Defense',
+                                rule: 'Military base restrictions - unauthorized UAS prohibited',
+                                penalty: 'Federal charges, possible detention',
+                                reason: 'National security restricted area'
+                            });
+                            prohibited = true;
+                        }
+                    });
+
+                    // Check location name for known restricted areas
+                    const knownRestrictions = checkKnownRestrictedAreas(locationName);
+                    restrictions.push(...knownRestrictions.restrictions);
+                    if (knownRestrictions.prohibited) prohibited = true;
+                    if (knownRestrictions.requiresPermit) requiresPermit = true;
+
+                    return {
+                        restrictions: restrictions,
+                        compliant: !prohibited,
+                        requiresPermit: requiresPermit,
+                        status: prohibited ? 'prohibited' : (requiresPermit ? 'permit_required' : 'allowed')
+                    };
+
+                } catch (error) {
+                    console.warn('Local regulation check error:', error);
+                    // Check known restrictions even if OSM query fails
+                    return checkKnownRestrictedAreas(locationName);
+                }
+            }
+
+            /**
+             * V13.1: Check location name against known restricted areas database
+             */
+            function checkKnownRestrictedAreas(locationName) {
+                const restrictions = [];
+                let prohibited = false;
+                let requiresPermit = false;
+
+                if (!locationName) {
+                    return { restrictions, compliant: true, requiresPermit: false, status: 'allowed' };
+                }
+
+                const lowerName = locationName.toLowerCase();
+
+                // National Parks (PROHIBITED)
+                const nationalParks = [
+                    'yellowstone', 'yosemite', 'grand canyon', 'zion', 'acadia', 'grand teton',
+                    'glacier', 'olympic', 'rocky mountain', 'sequoia', 'arches', 'bryce canyon',
+                    'death valley', 'joshua tree', 'shenandoah', 'great smoky mountains'
+                ];
+
+                for (const park of nationalParks) {
+                    if (lowerName.includes(park)) {
+                        restrictions.push({
+                            type: 'national_park',
+                            name: locationName,
+                            status: 'prohibited',
+                            authority: 'National Park Service',
+                            rule: '36 CFR 1.5 - Drones prohibited in all NPS areas',
+                            penalty: 'Civil fines up to $27,500, criminal fines up to $250,000',
+                            reason: 'National Park - takeoff/landing/operation prohibited'
+                        });
+                        prohibited = true;
+                        break;
+                    }
+                }
+
+                // Washington DC / Capital Area (RESTRICTED)
+                if (lowerName.includes('washington') && (lowerName.includes('dc') || lowerName.includes('d.c.'))) {
+                    restrictions.push({
+                        type: 'national_capital',
+                        name: 'Washington DC',
+                        status: 'prohibited',
+                        authority: 'FAA / DHS',
+                        rule: 'Special Flight Rules Area (SFRA) - 15 mile radius restriction',
+                        penalty: 'Federal violation, possible interception by law enforcement',
+                        reason: 'National Defense Airspace - requires special authorization'
+                    });
+                    prohibited = true;
+                }
+
+                // Stadiums during events
+                if (lowerName.includes('stadium') || lowerName.includes('arena')) {
+                    restrictions.push({
+                        type: 'stadium',
+                        name: locationName,
+                        status: 'time_restricted',
+                        authority: 'FAA',
+                        rule: '14 CFR 99.7 - No drones within 3 miles during events',
+                        penalty: 'Up to $30,000 fine',
+                        reason: 'Stadium TFR applies 1 hour before to 1 hour after events'
+                    });
+                    requiresPermit = true;
+                }
+
+                return {
+                    restrictions,
+                    compliant: !prohibited,
+                    requiresPermit: requiresPermit,
+                    status: prohibited ? 'prohibited' : (requiresPermit ? 'permit_required' : 'allowed')
+                };
             }
 
             // V10.0: Estimate population density (heuristic approach)
@@ -2944,10 +3187,12 @@
                     const imageSearchQuery = realLocationName || `${name}, ${locationName}`;
                     console.log(`🖼️ Image search query: "${imageSearchQuery}"`);
 
-                    const [imageData, weatherData, obstacleData] = await Promise.all([
+                    // V13.1: Fetch image, weather, obstacles, and local regulations in parallel
+                    const [imageData, weatherData, obstacleData, regulationData] = await Promise.all([
                         fetchLocationImage(poiLat, poiLng, spotType.category, imageSearchQuery),
                         fetchCurrentWeather(poiLat, poiLng, 'imperial'),
-                        detectObstacles(poiLat, poiLng, 500).catch(() => ({ count: 0, types: [], risk: 'low' }))
+                        detectObstacles(poiLat, poiLng, 500).catch(() => ({ count: 0, types: [], obstacles: [], risk: 'low' })),
+                        checkLocalRegulations(poiLat, poiLng, realLocationName).catch(() => ({ restrictions: [], compliant: true, requiresPermit: false, status: 'allowed' }))
                     ]);
 
                     // V10.0: Determine land access from OSM tags
@@ -3001,7 +3246,9 @@
                             access: accessInfo,
                             populationDensity: populationInfo,
                             cellCoverage: 'unknown' // Placeholder for future enhancement
-                        }
+                        },
+                        // V13.1: Local regulations data
+                        localRegulations: regulationData
                     });
                 }
 
@@ -5140,6 +5387,19 @@
                                                         Class ${spot.faaAirspace.class}${spot.faaAirspace.laancRequired ? ' (LAANC)' : ''}
                                                     </span>
                                                 ` : ''}
+                                                ${spot.localRegulations && spot.localRegulations.restrictions.length > 0 ? `
+                                                    <span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 12px; background: ${
+                                                        spot.localRegulations.status === 'prohibited' ? '#fee2e2' :
+                                                        spot.localRegulations.status === 'permit_required' ? '#fef3c7' : '#d1fae5'
+                                                    }; color: ${
+                                                        spot.localRegulations.status === 'prohibited' ? '#991b1b' :
+                                                        spot.localRegulations.status === 'permit_required' ? '#92400e' : '#065f46'
+                                                    }; font-weight: 600;"
+                                                    title="${spot.localRegulations.restrictions[0].reason}">
+                                                        ${spot.localRegulations.status === 'prohibited' ? '🚫' : '📋'}
+                                                        ${spot.localRegulations.restrictions[0].name}
+                                                    </span>
+                                                ` : ''}
                                             </div>
                                         ` : ''}
                                     </div>
@@ -5356,6 +5616,53 @@
                                 <div style="font-size: 13px; color: #666;">${reg.rule}</div>
                             </div>
                         `).join('')}
+
+                        ${spot.localRegulations && spot.localRegulations.status === 'prohibited' ? `
+                            <div style="background: #fee2e2; border-left: 4px solid #dc3545; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                                <h4 style="font-size: 14px; font-weight: 700; color: #991b1b; margin-bottom: 8px;">
+                                    🚫 FLIGHT PROHIBITED
+                                </h4>
+                                <p style="font-size: 13px; color: #666; margin: 0;">
+                                    This location is within ${spot.localRegulations.restrictions[0].name}.
+                                    Drone operations are prohibited by law. Violators may face severe penalties.
+                                </p>
+                            </div>
+                        ` : ''}
+
+                        <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin: 20px 0 12px 0;">📋 Local Regulations</h3>
+                        ${spot.localRegulations && spot.localRegulations.restrictions.length > 0 ? `
+                            ${spot.localRegulations.restrictions.map(r => `
+                                <div class="risk-category" style="border-left: 3px solid ${
+                                    r.status === 'prohibited' ? '#dc3545' :
+                                    r.status === 'permit_required' ? '#ffc107' : '#28a745'
+                                };">
+                                    <div style="font-weight: 600; margin-bottom: 8px;">
+                                        ${r.status === 'prohibited' ? '🚫' : '📋'} ${r.name}
+                                    </div>
+                                    <div style="font-size: 13px; color: #666; margin-bottom: 5px;">
+                                        <strong>Authority:</strong> ${r.authority}
+                                    </div>
+                                    <div style="font-size: 13px; color: #666; margin-bottom: 5px;">
+                                        <strong>Rule:</strong> ${r.rule}
+                                    </div>
+                                    <div style="font-size: 13px; color: #666; margin-bottom: 5px;">
+                                        <strong>Penalty:</strong> ${r.penalty}
+                                    </div>
+                                    <div style="font-size: 13px; color: #666;">
+                                        <strong>Note:</strong> ${r.reason}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        ` : `
+                            <div class="risk-category">
+                                <div style="color: #28a745;">
+                                    ✅ No known local restrictions
+                                </div>
+                                <div style="font-size: 13px; color: #666; margin-top: 5px;">
+                                    Always check local ordinances before flying
+                                </div>
+                            </div>
+                        `}
 
                         <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin: 20px 0 12px 0;">🌤 Weather Conditions</h3>
                         <div class="risk-category">
