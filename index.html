@@ -2094,6 +2094,13 @@
 
             /**
              * V12.0: Determine airspace status for a spot based on aircraft proximity
+             * V12.1 FIX: Only consider LOW ALTITUDE aircraft as conflicts
+             *
+             * Logic:
+             * - Drones fly max 400 ft AGL (FAA Part 107)
+             * - Only aircraft below 1,500 ft AGL are relevant conflicts
+             * - High-altitude commercial traffic (8,000+ ft) is NOT a concern
+             *
              * Returns: { status: 'clear|caution|restricted', message: string, closestAircraft: object }
              */
             function determineAirspaceStatus(spotLat, spotLng, aircraftData) {
@@ -2106,8 +2113,46 @@
                     };
                 }
 
-                // Find aircraft within 5 miles of this specific spot
-                const nearbyAircraft = aircraftData.aircraft.filter(ac => {
+                // FILTER 1: Only consider aircraft below 1,500 ft (low altitude = potential conflict)
+                // Drones max 400 ft, so aircraft above 1,500 ft pose no operational conflict
+                const LOW_ALTITUDE_THRESHOLD_FT = 1500;
+
+                const lowAltitudeAircraft = aircraftData.aircraft.filter(ac => {
+                    return ac.altitudeFt <= LOW_ALTITUDE_THRESHOLD_FT;
+                });
+
+                // If no low-altitude aircraft, check for proximity of any aircraft (informational)
+                if (lowAltitudeAircraft.length === 0) {
+                    // Check if there are high-altitude aircraft nearby (for information only)
+                    const nearbyHighAltitude = aircraftData.aircraft.filter(ac => {
+                        const distance = calculateDistance(spotLat, spotLng, ac.latitude, ac.longitude);
+                        ac.spotDistance = distance;
+                        ac.spotDistanceMiles = (distance * 0.000621371).toFixed(1);
+                        return distance <= 8047; // 5 miles
+                    });
+
+                    if (nearbyHighAltitude.length > 0) {
+                        nearbyHighAltitude.sort((a, b) => a.spotDistance - b.spotDistance);
+                        const closest = nearbyHighAltitude[0];
+                        return {
+                            status: 'clear',
+                            message: `Clear to fly - nearest aircraft at ${closest.altitudeFt.toLocaleString()} ft (above drone altitude)`,
+                            aircraft: [],
+                            closestAircraft: null,
+                            highAltitudeInfo: nearbyHighAltitude
+                        };
+                    }
+
+                    return {
+                        status: 'clear',
+                        message: 'No low-altitude aircraft detected',
+                        aircraft: [],
+                        closestAircraft: null
+                    };
+                }
+
+                // FILTER 2: Find low-altitude aircraft within 5 miles of this specific spot
+                const nearbyAircraft = lowAltitudeAircraft.filter(ac => {
                     const distance = calculateDistance(spotLat, spotLng, ac.latitude, ac.longitude);
                     ac.spotDistance = distance; // meters
                     ac.spotDistanceMiles = (distance * 0.000621371).toFixed(1);
@@ -2117,7 +2162,7 @@
                 if (nearbyAircraft.length === 0) {
                     return {
                         status: 'clear',
-                        message: 'No aircraft within 5 miles',
+                        message: 'No low-altitude aircraft within 5 miles',
                         aircraft: [],
                         closestAircraft: null
                     };
@@ -2127,22 +2172,44 @@
                 nearbyAircraft.sort((a, b) => a.spotDistance - b.spotDistance);
                 const closest = nearbyAircraft[0];
 
-                // Determine status based on closest aircraft
+                // Determine status based on closest LOW-ALTITUDE aircraft
                 const distanceMiles = parseFloat(closest.spotDistanceMiles);
+                const altitudeFt = closest.altitudeFt;
 
-                if (distanceMiles < 3) {
+                // VERY CLOSE + LOW ALTITUDE = DANGER
+                if (distanceMiles < 1 && altitudeFt < 500) {
                     return {
                         status: 'restricted',
-                        message: `Aircraft ${distanceMiles} mi away (${closest.callsign}) at ${closest.altitudeFt} ft`,
+                        message: `⚠️ LOW AIRCRAFT ALERT: ${distanceMiles} mi away at ${altitudeFt} ft - DO NOT FLY`,
                         aircraft: nearbyAircraft,
                         closestAircraft: closest
                     };
-                } else {
+                }
+                // CLOSE + LOW ALTITUDE = HIGH CAUTION
+                else if (distanceMiles < 3 && altitudeFt < 1000) {
                     return {
-                        status: 'caution',
-                        message: `Aircraft ${distanceMiles} mi away (${closest.callsign})`,
+                        status: 'restricted',
+                        message: `Aircraft ${distanceMiles} mi away (${closest.callsign}) at ${altitudeFt} ft - Wait for clearance`,
                         aircraft: nearbyAircraft,
                         closestAircraft: closest
+                    };
+                }
+                // MODERATE DISTANCE + LOW ALTITUDE = CAUTION
+                else if (distanceMiles < 5) {
+                    return {
+                        status: 'caution',
+                        message: `Low-altitude aircraft ${distanceMiles} mi away (${closest.callsign}) at ${altitudeFt} ft - Monitor before flying`,
+                        aircraft: nearbyAircraft,
+                        closestAircraft: closest
+                    };
+                }
+                // EDGE CASE: Shouldn't reach here due to 5-mile filter above
+                else {
+                    return {
+                        status: 'clear',
+                        message: 'No immediate aircraft conflicts',
+                        aircraft: [],
+                        closestAircraft: null
                     };
                 }
             }
