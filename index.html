@@ -5710,7 +5710,7 @@
                 document.querySelectorAll('.favorite-star').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        const spotId = parseInt(e.currentTarget.dataset.spotId);
+                        const spotId = e.currentTarget.dataset.spotId; // Keep as string for Foursquare IDs
                         const index = state.favorites.indexOf(spotId);
                         if (index > -1) {
                             state.favorites.splice(index, 1);
@@ -5726,7 +5726,7 @@
                 document.querySelectorAll('.spot-card').forEach(card => {
                     card.addEventListener('click', (e) => {
                         if (!e.target.classList.contains('favorite-star')) {
-                            const spotId = parseInt(e.currentTarget.dataset.spotId);
+                            const spotId = e.currentTarget.dataset.spotId; // Keep as string for Foursquare IDs
                             state.selectedSpot = spotId;
                             render();
                         }
@@ -5759,7 +5759,7 @@
 
                         if (action === 'viewspot') {
                             state.currentTab = 'planner';
-                            state.selectedSpot = parseInt(spotId);
+                            state.selectedSpot = spotId; // Keep as string for Foursquare IDs
                             render();
                         } else if (action === 'markflown') {
                             markFlightAsFlown(flightId);
