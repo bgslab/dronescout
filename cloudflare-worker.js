@@ -9,6 +9,7 @@ const GOOGLE_PLACES_BASE = 'https://maps.googleapis.com/maps/api/place';
 const OPENWEATHER_API_BASE = 'https://api.openweathermap.org/data/3.0';
 const FOURSQUARE_API_BASE = 'https://places-api.foursquare.com';
 const OPENSKY_API_BASE = 'https://opensky-network.org/api';
+const FAA_AIRSPACE_API = 'https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Airspace/FeatureServer/0';
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -126,6 +127,18 @@ export default {
           return jsonResponse({ error: 'Missing lat or lon/lng parameter' }, 400);
         }
         return await handleAircraftTracking(lat, lon, radius);
+      }
+
+      // V13.0: FAA Airspace Classification
+      // Returns official FAA airspace class (B/C/D/E/G) and altitude limits
+      if (path === '/api/airspace/classification' && request.method === 'GET') {
+        const lat = url.searchParams.get('lat');
+        const lon = url.searchParams.get('lon') || url.searchParams.get('lng');
+
+        if (!lat || !lon) {
+          return jsonResponse({ error: 'Missing lat or lon/lng parameter' }, 400);
+        }
+        return await handleAirspaceClassification(lat, lon);
       }
 
       // Route requests - Google Places API (FALLBACK ONLY)
@@ -1791,6 +1804,202 @@ async function handleAircraftTracking(lat, lon, radiusMeters) {
       timestamp: Date.now()
     }, 500);
   }
+}
+
+/**
+ * V13.0: Handle FAA Airspace Classification Query
+ * Returns official FAA airspace class and altitude restrictions
+ *
+ * Uses FAA's official ArcGIS REST API for controlled airspace data
+ * Data Source: https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/Airspace/FeatureServer/0
+ *
+ * Returns airspace information including:
+ * - Airspace Class (B, C, D, E, G)
+ * - Floor/Ceiling altitudes (in feet MSL or AGL)
+ * - Airport identifier (if applicable)
+ * - LAANC requirement status
+ */
+async function handleAirspaceClassification(lat, lon) {
+  try {
+    // Query FAA Airspace FeatureServer for point intersection
+    const queryParams = new URLSearchParams({
+      where: '1=1',
+      geometry: `${lon},${lat}`,
+      geometryType: 'esriGeometryPoint',
+      inSR: '4326', // WGS84
+      spatialRel: 'esriSpatialRelIntersects',
+      outFields: 'IDENT_TXT,NAME_TXT,CLASS_CODE,TYPE_CODE,ICAO_TXT,DISTVERTUPPER_VAL,DISTVERTUPPER_UOM,DISTVERTUPPER_CODE,DISTVERTLOWER_VAL,DISTVERTLOWER_UOM,DISTVERTLOWER_CODE',
+      returnGeometry: 'false',
+      f: 'json'
+    });
+
+    const apiUrl = `${FAA_AIRSPACE_API}/query?${queryParams}`;
+    const response = await fetch(apiUrl);
+
+    if (!response.ok) {
+      console.error(`FAA Airspace API error: ${response.status}`);
+      return jsonResponse({
+        success: false,
+        airspace: null,
+        message: 'Airspace data unavailable'
+      });
+    }
+
+    const data = await response.json();
+    const features = data.features || [];
+
+    if (features.length === 0) {
+      // No controlled airspace - Class G (uncontrolled)
+      return jsonResponse({
+        success: true,
+        airspace: {
+          class: 'G',
+          type: 'UNCONTROLLED',
+          name: 'Class G Airspace',
+          floor: 0,
+          ceiling: 1200, // Typical Class G ceiling (AGL)
+          laancRequired: false,
+          restrictions: []
+        },
+        message: 'Class G (Uncontrolled) airspace - Standard Part 107 rules apply'
+      });
+    }
+
+    // Process airspace data - prioritize ground-level airspace relevant to drones
+    const classHierarchy = ['B', 'C', 'D', 'E', 'G', 'A']; // A is last because it starts at 18,000 ft
+    const airspaceAreas = features.map(f => f.attributes).filter(a => a.CLASS_CODE);
+
+    // Filter out Class A (irrelevant for drone operations at 0-400 ft)
+    // Class A starts at 18,000 ft MSL - drones operate at max 400 ft AGL
+    const relevantAirspace = airspaceAreas.filter(a =>
+      a.CLASS_CODE !== 'A' || a.DISTVERTLOWER_VAL <= 1000
+    );
+
+    // Sort by most restrictive class (B is most restrictive for drone ops)
+    const sortedAirspace = relevantAirspace.length > 0 ? relevantAirspace : airspaceAreas;
+    sortedAirspace.sort((a, b) => {
+      const aIndex = classHierarchy.indexOf(a.CLASS_CODE);
+      const bIndex = classHierarchy.indexOf(b.CLASS_CODE);
+      return aIndex - bIndex;
+    });
+
+    const primaryAirspace = sortedAirspace[0] || features[0].attributes;
+
+    // Determine LAANC requirement
+    const laancRequired = ['B', 'C', 'D', 'E'].includes(primaryAirspace.CLASS_CODE);
+
+    // Parse altitude limits
+    const ceiling = primaryAirspace.DISTVERTUPPER_VAL !== -9998 ?
+      Math.round(primaryAirspace.DISTVERTUPPER_VAL) : null;
+    const floor = primaryAirspace.DISTVERTLOWER_VAL !== -9998 ?
+      Math.round(primaryAirspace.DISTVERTLOWER_VAL) : 0;
+
+    // Build response
+    return jsonResponse({
+      success: true,
+      airspace: {
+        class: primaryAirspace.CLASS_CODE || 'UNKNOWN',
+        type: primaryAirspace.TYPE_CODE || 'CLASS',
+        name: primaryAirspace.NAME_TXT || 'Controlled Airspace',
+        airport: primaryAirspace.ICAO_TXT || primaryAirspace.IDENT_TXT || null,
+        floor: floor,
+        floorUnit: primaryAirspace.DISTVERTLOWER_UOM || 'FT',
+        floorReference: primaryAirspace.DISTVERTLOWER_CODE || 'MSL',
+        ceiling: ceiling,
+        ceilingUnit: primaryAirspace.DISTVERTUPPER_UOM || 'FT',
+        ceilingReference: primaryAirspace.DISTVERTUPPER_CODE || 'MSL',
+        laancRequired: laancRequired,
+        restrictions: buildAirspaceRestrictions(primaryAirspace.CLASS_CODE, laancRequired),
+        allAirspace: airspaceAreas.slice(0, 5).map(a => ({
+          class: a.CLASS_CODE,
+          name: a.NAME_TXT,
+          floor: a.DISTVERTLOWER_VAL,
+          ceiling: a.DISTVERTUPPER_VAL
+        }))
+      },
+      message: buildAirspaceMessage(primaryAirspace.CLASS_CODE, laancRequired, primaryAirspace.NAME_TXT)
+    });
+
+  } catch (error) {
+    console.error('FAA Airspace classification error:', error);
+    return jsonResponse({
+      success: false,
+      airspace: null,
+      error: 'Failed to fetch airspace data',
+      message: 'Airspace data temporarily unavailable'
+    }, 500);
+  }
+}
+
+/**
+ * Helper: Build airspace restriction messages based on class
+ */
+function buildAirspaceRestrictions(airspaceClass, laancRequired) {
+  const restrictions = [];
+
+  switch (airspaceClass) {
+    case 'A':
+      restrictions.push('Class A: 18,000 ft - 60,000 ft MSL');
+      restrictions.push('Drone operations prohibited without special authorization');
+      break;
+    case 'B':
+      restrictions.push('Class B: Major airport airspace');
+      restrictions.push('Part 107.41 - ATC authorization required (LAANC or manual)');
+      restrictions.push('Altitude restrictions apply - typically 0-400 ft AGL in approved areas');
+      restrictions.push('May require waiver for operations');
+      break;
+    case 'C':
+      restrictions.push('Class C: Medium airport airspace');
+      restrictions.push('Part 107.41 - ATC authorization required (LAANC or manual)');
+      restrictions.push('Two-way radio communication required for manned aircraft');
+      restrictions.push('Altitude limits typically 0-400 ft AGL in approved areas');
+      break;
+    case 'D':
+      restrictions.push('Class D: Small airport with control tower');
+      restrictions.push('Part 107.41 - ATC authorization required (LAANC or manual)');
+      restrictions.push('Authorization typically easier than Class B/C');
+      restrictions.push('Altitude limits vary by location');
+      break;
+    case 'E':
+      restrictions.push('Class E: Controlled airspace');
+      if (laancRequired) {
+        restrictions.push('LAANC authorization may be required below certain altitudes');
+      }
+      restrictions.push('Standard Part 107 rules apply');
+      restrictions.push('May have altitude restrictions near airports');
+      break;
+    case 'G':
+      restrictions.push('Class G: Uncontrolled airspace');
+      restrictions.push('Standard Part 107 rules apply');
+      restrictions.push('No ATC authorization required');
+      restrictions.push('Maximum altitude: 400 ft AGL');
+      break;
+  }
+
+  return restrictions;
+}
+
+/**
+ * Helper: Build human-readable airspace message
+ */
+function buildAirspaceMessage(airspaceClass, laancRequired, airspaceName) {
+  if (airspaceClass === 'G') {
+    return 'Class G (Uncontrolled) - You can fly under standard Part 107 rules';
+  }
+
+  if (airspaceClass === 'B') {
+    return `${airspaceName} - LAANC authorization REQUIRED before flight`;
+  }
+
+  if (airspaceClass === 'C' || airspaceClass === 'D') {
+    return `${airspaceName} - LAANC authorization required (usually approved quickly)`;
+  }
+
+  if (laancRequired) {
+    return `${airspaceName} - Check LAANC for altitude restrictions`;
+  }
+
+  return `${airspaceName} - Controlled airspace, verify requirements`;
 }
 
 /**
