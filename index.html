@@ -2616,18 +2616,20 @@
             }
 
             // V10.0: Detect obstacles near a location (power lines, towers, etc.)
-            // Simplified and optimized for performance
+            // V13.0.2: Enhanced to return obstacle details with names and locations
             async function detectObstacles(lat, lng, radiusMeters = 500) {
                 try {
-                    // Simplified query - only check major obstacles
+                    // Query for major obstacles with full data
                     const query = `
                         [out:json][timeout:3];
                         (
                           way["power"="line"](around:${radiusMeters},${lat},${lng});
                           node["power"="tower"](around:${radiusMeters},${lat},${lng});
                           way["man_made"="tower"](around:${radiusMeters},${lat},${lng});
+                          node["man_made"="tower"](around:${radiusMeters},${lat},${lng});
+                          node["man_made"="mast"](around:${radiusMeters},${lat},${lng});
                         );
-                        out count;
+                        out body;
                     `;
 
                     // Add timeout to prevent hanging
@@ -2646,28 +2648,63 @@
                     clearTimeout(timeoutId);
 
                     if (!response.ok) {
-                        return { count: 0, types: [], risk: 'low' };
+                        return { count: 0, types: [], obstacles: [], risk: 'low' };
                     }
 
                     const data = await response.json();
                     const count = data.elements.length;
 
-                    const types = [];
-                    data.elements.forEach(el => {
-                        if (el.tags) {
-                            if (el.tags.power) types.push('power infrastructure');
-                            if (el.tags.man_made === 'tower' || el.tags.man_made === 'mast') types.push('tower');
+                    // Build detailed obstacle list
+                    const obstacles = data.elements.map(el => {
+                        let type = 'Unknown';
+                        let name = el.tags?.name || null;
+
+                        if (el.tags?.power === 'line') {
+                            type = 'Power Line';
+                        } else if (el.tags?.power === 'tower') {
+                            type = 'Power Tower';
+                        } else if (el.tags?.man_made === 'tower') {
+                            type = el.tags?.['tower:type'] ? `${el.tags['tower:type']} Tower` : 'Tower';
+                        } else if (el.tags?.man_made === 'mast') {
+                            type = 'Mast';
                         }
-                    });
+
+                        // Calculate distance from spot
+                        const obstacleLatLng = el.type === 'way' ?
+                            (el.center ? { lat: el.center.lat, lon: el.center.lon } : null) :
+                            { lat: el.lat, lon: el.lon };
+
+                        let distance = null;
+                        if (obstacleLatLng) {
+                            const distMeters = calculateDistance(lat, lng, obstacleLatLng.lat, obstacleLatLng.lon);
+                            distance = Math.round(distMeters * 3.28084); // Convert to feet
+                        }
+
+                        return {
+                            id: el.id,
+                            type: type,
+                            name: name,
+                            distance: distance,
+                            tags: el.tags || {}
+                        };
+                    }).filter(o => o.distance !== null); // Remove obstacles without location
+
+                    // Sort by distance (closest first)
+                    obstacles.sort((a, b) => a.distance - b.distance);
+
+                    // Get unique types
+                    const types = [...new Set(obstacles.map(o => o.type))];
 
                     return {
                         count,
-                        types: [...new Set(types)],
+                        types: types,
+                        obstacles: obstacles, // NEW: Full obstacle details
                         risk: count === 0 ? 'low' : count < 3 ? 'medium' : 'high'
                     };
                 } catch (error) {
                     // Silent fail - don't block spot loading if obstacle detection times out
-                    return { count: 0, types: [], risk: 'low' };
+                    console.warn('Obstacle detection error:', error);
+                    return { count: 0, types: [], obstacles: [], risk: 'low' };
                 }
             }
 
@@ -5062,7 +5099,10 @@
                                                     }; color: ${
                                                         spot.intelligence.obstacles.risk === 'low' ? '#065f46' :
                                                         spot.intelligence.obstacles.risk === 'medium' ? '#92400e' : '#991b1b'
-                                                    }; font-weight: 600;">
+                                                    }; font-weight: 600;"
+                                                    title="${spot.intelligence.obstacles.obstacles && spot.intelligence.obstacles.obstacles.length > 0 ?
+                                                        `Closest: ${spot.intelligence.obstacles.obstacles[0].type}${spot.intelligence.obstacles.obstacles[0].name ? ' (' + spot.intelligence.obstacles.obstacles[0].name + ')' : ''} at ${spot.intelligence.obstacles.obstacles[0].distance} ft` :
+                                                        `${spot.intelligence.obstacles.count} obstacles within 500ft`}">
                                                         ${
                                                             spot.intelligence.obstacles.risk === 'low' ? '✅' :
                                                             spot.intelligence.obstacles.risk === 'medium' ? '⚠️' : '🚫'
@@ -5195,6 +5235,20 @@
                                             } Obstacles:</strong> ${spot.intelligence.obstacles.count} detected within 500ft${
                                                 spot.intelligence.obstacles.types.length > 0 ? ` (${spot.intelligence.obstacles.types.join(', ')})` : ''
                                             }
+                                            ${spot.intelligence.obstacles.obstacles && spot.intelligence.obstacles.obstacles.length > 0 ? `
+                                                <div style="margin-top: 8px; padding-left: 16px; font-size: 12px; color: #666;">
+                                                    ${spot.intelligence.obstacles.obstacles.slice(0, 5).map(obs => `
+                                                        <div style="margin-bottom: 4px;">
+                                                            • ${obs.type}${obs.name ? ` (${obs.name})` : ''} - ${obs.distance} ft away
+                                                        </div>
+                                                    `).join('')}
+                                                    ${spot.intelligence.obstacles.obstacles.length > 5 ? `
+                                                        <div style="margin-top: 4px; font-style: italic;">
+                                                            +${spot.intelligence.obstacles.obstacles.length - 5} more...
+                                                        </div>
+                                                    ` : ''}
+                                                </div>
+                                            ` : ''}
                                         </div>
                                     ` : ''}
                                 </div>
