@@ -8,6 +8,7 @@ const GOOGLE_STREETVIEW_BASE = 'https://maps.googleapis.com/maps/api/streetview'
 const GOOGLE_PLACES_BASE = 'https://maps.googleapis.com/maps/api/place';
 const OPENWEATHER_API_BASE = 'https://api.openweathermap.org/data/3.0';
 const FOURSQUARE_API_BASE = 'https://places-api.foursquare.com';
+const OPENSKY_API_BASE = 'https://opensky-network.org/api';
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -112,6 +113,19 @@ export default {
           return jsonResponse({ error: 'Missing lat or lon/lng parameter' }, 400);
         }
         return await handleFoursquareDiscover(lat, lon, radius, env.FOURSQUARE_API_KEY);
+      }
+
+      // V12.0: OpenSky Network - Live Aircraft Tracking
+      // Returns aircraft currently in specified area (10-second rate limit on OpenSky side)
+      if (path === '/api/airspace/aircraft' && request.method === 'GET') {
+        const lat = url.searchParams.get('lat');
+        const lon = url.searchParams.get('lon') || url.searchParams.get('lng');
+        const radius = url.searchParams.get('radius') || '10000'; // meters
+
+        if (!lat || !lon) {
+          return jsonResponse({ error: 'Missing lat or lon/lng parameter' }, 400);
+        }
+        return await handleAircraftTracking(lat, lon, radius);
       }
 
       // Route requests - Google Places API (FALLBACK ONLY)
@@ -1668,6 +1682,134 @@ function generateHotspotName(hotspot, tags) {
   // Fallback to coordinate-based name
   const shotType = determineShotType(tags);
   return `${shotType.charAt(0).toUpperCase() + shotType.slice(1)} Hotspot`;
+}
+
+/**
+ * V12.0: Handle OpenSky Network Aircraft Tracking
+ * Returns live aircraft within specified radius of coordinates
+ *
+ * OpenSky API: https://opensky-network.org/api/states/all
+ * Rate limit: 10 seconds between calls (enforced by OpenSky)
+ * Free tier: Anonymous access, 400 credits/day (~4000 API calls)
+ *
+ * Response format per aircraft:
+ * [icao24, callsign, origin_country, time_position, last_contact,
+ *  longitude, latitude, baro_altitude, on_ground, velocity,
+ *  true_track, vertical_rate, sensors, geo_altitude, squawk,
+ *  spi, position_source]
+ */
+async function handleAircraftTracking(lat, lon, radiusMeters) {
+  try {
+    // Convert radius from meters to degrees (approximate)
+    // 1 degree latitude ≈ 111km, longitude varies by latitude
+    const latDelta = radiusMeters / 111000;
+    const lonDelta = radiusMeters / (111000 * Math.cos(lat * Math.PI / 180));
+
+    const minLat = parseFloat(lat) - latDelta;
+    const maxLat = parseFloat(lat) + latDelta;
+    const minLon = parseFloat(lon) - lonDelta;
+    const maxLon = parseFloat(lon) + lonDelta;
+
+    // OpenSky bounding box API
+    const apiUrl = `${OPENSKY_API_BASE}/states/all?lamin=${minLat}&lomin=${minLon}&lamax=${maxLat}&lomax=${maxLon}`;
+
+    const response = await fetch(apiUrl);
+
+    if (!response.ok) {
+      // Return empty array on error (don't block spot discovery)
+      console.error(`OpenSky API error: ${response.status}`);
+      return jsonResponse({
+        success: true,
+        aircraft: [],
+        count: 0,
+        message: response.status === 429 ? 'Rate limit exceeded (10-second minimum between calls)' : 'Aircraft data unavailable',
+        timestamp: Date.now()
+      });
+    }
+
+    const data = await response.json();
+
+    // Parse aircraft data
+    const aircraft = [];
+    if (data.states && data.states.length > 0) {
+      for (const state of data.states) {
+        const [icao24, callsign, originCountry, timePosition, lastContact,
+               longitude, latitude, baroAltitude, onGround, velocity,
+               trueTrack, verticalRate, sensors, geoAltitude, squawk,
+               spi, positionSource] = state;
+
+        // Skip aircraft on ground or with null positions
+        if (onGround || !latitude || !longitude) continue;
+
+        // Calculate distance from center point
+        const distance = calculateDistance(lat, lon, latitude, longitude);
+
+        // Only include aircraft within radius
+        if (distance <= radiusMeters) {
+          aircraft.push({
+            icao24,
+            callsign: callsign ? callsign.trim() : 'Unknown',
+            originCountry,
+            latitude,
+            longitude,
+            altitude: geoAltitude || baroAltitude, // meters
+            altitudeFt: Math.round((geoAltitude || baroAltitude || 0) * 3.28084),
+            velocity: velocity || 0, // m/s
+            velocityKnots: velocity ? Math.round(velocity * 1.94384) : 0,
+            heading: trueTrack || 0,
+            verticalRate: verticalRate || 0,
+            distance: Math.round(distance), // meters
+            distanceMiles: (distance * 0.000621371).toFixed(1),
+            onGround: false,
+            lastContact: new Date(lastContact * 1000).toISOString()
+          });
+        }
+      }
+    }
+
+    // Sort by distance (closest first)
+    aircraft.sort((a, b) => a.distance - b.distance);
+
+    return jsonResponse({
+      success: true,
+      aircraft,
+      count: aircraft.length,
+      centerLat: parseFloat(lat),
+      centerLon: parseFloat(lon),
+      radiusMeters: parseInt(radiusMeters),
+      timestamp: data.time || Math.floor(Date.now() / 1000),
+      message: aircraft.length === 0 ? 'No aircraft detected in area' : `${aircraft.length} aircraft detected`
+    });
+
+  } catch (error) {
+    console.error('Aircraft tracking error:', error);
+    return jsonResponse({
+      success: false,
+      error: 'Failed to fetch aircraft data',
+      aircraft: [],
+      count: 0,
+      timestamp: Date.now()
+    }, 500);
+  }
+}
+
+/**
+ * Helper: Calculate distance between two coordinates (Haversine formula)
+ * Returns distance in meters
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000; // Earth's radius in meters
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return R * c;
 }
 
 /**

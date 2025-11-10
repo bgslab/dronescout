@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout V11.0 - Smart Spot Discovery</title>
+    <title>DroneScout V12.0 - Smart Spot Discovery</title>
     <!-- Build: 2025-10-31-23:50 UTC - FORCE RELOAD -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -1046,7 +1046,7 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout V11.0</h1>
+            <h1>🚁 DroneScout V12.0</h1>
             <p>Plan • Discover • Map • Assess • Fly • Sync • Analyze</p>
         </div>
 
@@ -1994,12 +1994,30 @@
 
                     console.log(`🚁 Searching for drone spots: ${radiusKm.toFixed(1)}km (${(radiusKm * 0.621371).toFixed(1)} mi) radius`);
 
+                    // V12.0: Check airspace first (runs in parallel with spot search)
+                    const airspacePromise = checkAirspace(lat, lng, radiusKm);
+
                     // PRIMARY METHOD: Foursquare Places Discovery
                     // Find ALL types of photo-worthy locations: urban, suburban, rural, nature
-                    const foursquareResult = await searchFoursquarePlaces(lat, lng, radiusKm, locationName);
+                    const [foursquareResult, aircraftData] = await Promise.all([
+                        searchFoursquarePlaces(lat, lng, radiusKm, locationName),
+                        airspacePromise
+                    ]);
 
                     if (foursquareResult.success && foursquareResult.spots.length > 0) {
                         console.log(`✅ Using ${foursquareResult.count} places from Foursquare`);
+
+                        // V12.0: Add airspace data to spots
+                        if (aircraftData && aircraftData.success) {
+                            foursquareResult.spots.forEach(spot => {
+                                spot.airspace = determineAirspaceStatus(
+                                    spot.coordinates.lat,
+                                    spot.coordinates.lng,
+                                    aircraftData
+                                );
+                            });
+                        }
+
                         return foursquareResult.spots;
                     }
 
@@ -2009,6 +2027,19 @@
 
                     if (osmSpots && osmSpots.length > 0) {
                         console.log(`✅ Using ${osmSpots.length} spots from OpenStreetMap`);
+
+                        // V12.0: Add airspace data to OSM spots too
+                        const aircraftData = await airspacePromise;
+                        if (aircraftData && aircraftData.success) {
+                            osmSpots.forEach(spot => {
+                                spot.airspace = determineAirspaceStatus(
+                                    spot.coordinates.lat,
+                                    spot.coordinates.lng,
+                                    aircraftData
+                                );
+                            });
+                        }
+
                         return osmSpots;
                     }
 
@@ -2018,6 +2049,101 @@
                 } catch (error) {
                     console.error('Search error:', error);
                     return [];
+                }
+            }
+
+            /**
+             * V12.0: Check airspace for aircraft using OpenSky Network
+             * Returns aircraft within radius of location
+             */
+            async function checkAirspace(lat, lng, radiusKm) {
+                try {
+                    const workerUrl = state.syncSettings?.workerUrl;
+                    if (!workerUrl) {
+                        console.warn('⚠️ Worker URL not configured for airspace check');
+                        return { success: false, aircraft: [], count: 0 };
+                    }
+
+                    const radiusMeters = Math.round(radiusKm * 1000);
+                    const url = `${workerUrl}/api/airspace/aircraft?lat=${lat}&lon=${lng}&radius=${radiusMeters}`;
+
+                    console.log(`✈️ Checking airspace: ${radiusKm}km radius...`);
+
+                    const response = await fetch(url);
+
+                    if (!response.ok) {
+                        console.warn('Airspace API error:', response.status);
+                        return { success: false, aircraft: [], count: 0 };
+                    }
+
+                    const data = await response.json();
+
+                    if (data.success && data.count > 0) {
+                        console.log(`✈️ Found ${data.count} aircraft in area`);
+                    } else {
+                        console.log('✅ No aircraft detected in area');
+                    }
+
+                    return data;
+
+                } catch (error) {
+                    console.error('❌ Airspace check error:', error);
+                    return { success: false, aircraft: [], count: 0, error: error.message };
+                }
+            }
+
+            /**
+             * V12.0: Determine airspace status for a spot based on aircraft proximity
+             * Returns: { status: 'clear|caution|restricted', message: string, closestAircraft: object }
+             */
+            function determineAirspaceStatus(spotLat, spotLng, aircraftData) {
+                if (!aircraftData || !aircraftData.success || aircraftData.count === 0) {
+                    return {
+                        status: 'clear',
+                        message: 'No aircraft detected',
+                        aircraft: [],
+                        closestAircraft: null
+                    };
+                }
+
+                // Find aircraft within 5 miles of this specific spot
+                const nearbyAircraft = aircraftData.aircraft.filter(ac => {
+                    const distance = calculateDistance(spotLat, spotLng, ac.latitude, ac.longitude);
+                    ac.spotDistance = distance; // meters
+                    ac.spotDistanceMiles = (distance * 0.000621371).toFixed(1);
+                    return distance <= 8047; // 5 miles in meters
+                });
+
+                if (nearbyAircraft.length === 0) {
+                    return {
+                        status: 'clear',
+                        message: 'No aircraft within 5 miles',
+                        aircraft: [],
+                        closestAircraft: null
+                    };
+                }
+
+                // Sort by distance from spot
+                nearbyAircraft.sort((a, b) => a.spotDistance - b.spotDistance);
+                const closest = nearbyAircraft[0];
+
+                // Determine status based on closest aircraft
+                const distanceMiles = parseFloat(closest.spotDistanceMiles);
+
+                if (distanceMiles < 3) {
+                    return {
+                        status: 'restricted',
+                        message: `Aircraft ${distanceMiles} mi away (${closest.callsign}) at ${closest.altitudeFt} ft`,
+                        aircraft: nearbyAircraft,
+                        closestAircraft: closest
+                    };
+                } else {
+                    return {
+                        status: 'caution',
+                        message: `Aircraft ${distanceMiles} mi away (${closest.callsign})`,
+                        aircraft: nearbyAircraft,
+                        closestAircraft: closest
+                    };
                 }
             }
 
@@ -4710,6 +4836,22 @@
                                                         ${spot.intelligence.obstacles.count} Obstacles
                                                     </span>
                                                 ` : ''}
+                                                ${spot.airspace ? `
+                                                    <span style="display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 12px; background: ${
+                                                        spot.airspace.status === 'clear' ? '#d1fae5' :
+                                                        spot.airspace.status === 'caution' ? '#fef3c7' : '#fee2e2'
+                                                    }; color: ${
+                                                        spot.airspace.status === 'clear' ? '#065f46' :
+                                                        spot.airspace.status === 'caution' ? '#92400e' : '#991b1b'
+                                                    }; font-weight: 600;">
+                                                        ${
+                                                            spot.airspace.status === 'clear' ? '✈️✅' :
+                                                            spot.airspace.status === 'caution' ? '✈️⚠️' : '✈️🚫'
+                                                        }
+                                                        ${spot.airspace.status === 'clear' ? 'Clear Airspace' :
+                                                          spot.airspace.status === 'caution' ? 'Airspace Caution' : 'Aircraft Nearby'}
+                                                    </span>
+                                                ` : ''}
                                             </div>
                                         ` : ''}
                                     </div>
@@ -4818,13 +4960,49 @@
                         <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin-bottom: 12px;">⚠️ Risk Assessment - ${riskScore}/100</h3>
                         ${renderRiskCategories()}
 
-                        <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin: 20px 0 12px 0;">✈️ Airspace Details</h3>
-                        <div class="risk-category">
-                            <div style="margin-bottom: 10px;"><strong>Class:</strong> ${spot.airspaceDetails.class}</div>
-                            <div style="margin-bottom: 10px;"><strong>Ceiling:</strong> ${spot.airspaceDetails.ceiling}</div>
-                            <div style="margin-bottom: 10px;"><strong>LAANC Required:</strong> ${spot.airspaceDetails.laancRequired}</div>
-                            <div><strong>Nearest Airport:</strong> ${spot.airspaceDetails.nearestAirport}</div>
-                        </div>
+                        <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin: 20px 0 12px 0;">✈️ Airspace Status</h3>
+                        ${spot.airspace ? `
+                            <div class="risk-category" style="border-left: 3px solid ${
+                                spot.airspace.status === 'clear' ? '#28a745' :
+                                spot.airspace.status === 'caution' ? '#ffc107' : '#dc3545'
+                            };">
+                                <div style="margin-bottom: 10px;">
+                                    <strong>Status:</strong>
+                                    <span style="color: ${
+                                        spot.airspace.status === 'clear' ? '#28a745' :
+                                        spot.airspace.status === 'caution' ? '#f59e0b' : '#dc3545'
+                                    }; font-weight: 700;">
+                                        ${spot.airspace.status === 'clear' ? '✅ CLEAR' :
+                                          spot.airspace.status === 'caution' ? '⚠️ CAUTION' : '🚫 RESTRICTED'}
+                                    </span>
+                                </div>
+                                <div style="margin-bottom: 10px;"><strong>Details:</strong> ${spot.airspace.message}</div>
+                                ${spot.airspace.aircraft && spot.airspace.aircraft.length > 0 ? `
+                                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+                                        <strong>Nearby Aircraft (${spot.airspace.aircraft.length}):</strong>
+                                        <div style="margin-top: 10px; max-height: 200px; overflow-y: auto;">
+                                            ${spot.airspace.aircraft.slice(0, 5).map(ac => `
+                                                <div style="padding: 8px; margin-bottom: 8px; background: #f9fafb; border-radius: 6px; font-size: 13px;">
+                                                    <div style="font-weight: 600; color: #1e3c72;">${ac.callsign}</div>
+                                                    <div style="color: #666; margin-top: 4px;">
+                                                        📍 ${ac.spotDistanceMiles} mi away •
+                                                        ⬆️ ${ac.altitudeFt.toLocaleString()} ft •
+                                                        ➡️ ${ac.velocityKnots} kt
+                                                    </div>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        ` : `
+                            <div class="risk-category">
+                                <div style="margin-bottom: 10px;"><strong>Class:</strong> ${spot.airspaceDetails.class}</div>
+                                <div style="margin-bottom: 10px;"><strong>Ceiling:</strong> ${spot.airspaceDetails.ceiling}</div>
+                                <div style="margin-bottom: 10px;"><strong>LAANC Required:</strong> ${spot.airspaceDetails.laancRequired}</div>
+                                <div><strong>Nearest Airport:</strong> ${spot.airspaceDetails.nearestAirport}</div>
+                            </div>
+                        `}
 
                         <h3 style="font-size: 16px; font-weight: 700; color: #1e3c72; margin: 20px 0 12px 0;">📋 Regulations</h3>
                         ${spot.regulations.map(reg => `
