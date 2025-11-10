@@ -3646,6 +3646,7 @@
              * V13.2: Calculate dynamic risk score based on real-time conditions
              * Combines weather, airspace, obstacles, and regulations into comprehensive 0-100 score
              * Higher score = safer to fly
+             * V13.4.1: Improved handling of missing data - default to optimistic when data unavailable
              */
             function calculateDynamicRiskScore(spot) {
                 let score = 0;
@@ -3666,10 +3667,11 @@
                     } else if (weatherRisk === 'high') {
                         breakdown.weather = 0;
                     } else {
-                        breakdown.weather = 25; // Unknown, assume caution
+                        breakdown.weather = 30; // Unknown, assume good
                     }
                 } else {
-                    breakdown.weather = 25; // No data, assume moderate
+                    // No weather data available - assume good conditions
+                    breakdown.weather = 30;
                 }
 
                 // Factor 2: Airspace Status (0-25 points)
@@ -3681,10 +3683,20 @@
                     } else if (spot.overallStatus.status === 'restricted') {
                         breakdown.airspace = 0;
                     } else {
-                        breakdown.airspace = 15; // Unknown
+                        breakdown.airspace = 20; // Unknown
+                    }
+                } else if (spot.faaAirspace) {
+                    // Fallback to FAA airspace data if overallStatus missing
+                    if (spot.faaAirspace.class === 'G') {
+                        breakdown.airspace = 25; // Class G = clear
+                    } else if (spot.faaAirspace.laancRequired) {
+                        breakdown.airspace = 12; // LAANC required = caution
+                    } else {
+                        breakdown.airspace = 20;
                     }
                 } else {
-                    breakdown.airspace = 15; // No data
+                    // No airspace data - assume Class G (most common)
+                    breakdown.airspace = 20;
                 }
 
                 // Factor 3: Obstacles (0-20 points)
@@ -3697,10 +3709,11 @@
                     } else if (obstacleRisk === 'high') {
                         breakdown.obstacles = 0;
                     } else {
-                        breakdown.obstacles = 15;
+                        breakdown.obstacles = 17;
                     }
                 } else {
-                    breakdown.obstacles = 15; // No data
+                    // No obstacle data - assume low risk
+                    breakdown.obstacles = 17;
                 }
 
                 // Factor 4: Local Regulations (0-20 points)
@@ -3712,10 +3725,11 @@
                     } else if (spot.localRegulations.status === 'prohibited') {
                         breakdown.regulations = 0;
                     } else {
-                        breakdown.regulations = 15;
+                        breakdown.regulations = 18;
                     }
                 } else {
-                    breakdown.regulations = 15; // No data
+                    // No regulation data - assume no restrictions
+                    breakdown.regulations = 18;
                 }
 
                 // Calculate total score (max 100)
@@ -3723,7 +3737,8 @@
 
                 return {
                     score: Math.max(0, Math.min(100, score)),
-                    breakdown: breakdown
+                    breakdown: breakdown,
+                    hasCompleteData: !!(spot.weather?.flyingConditions && spot.overallStatus && spot.intelligence?.obstacles && spot.localRegulations)
                 };
             }
 
@@ -4981,33 +4996,58 @@
 
             /**
              * V13.4: Load FAA airspace geometry and add to map layers
+             * V13.4.1: Added detailed error logging and validation
              */
             async function loadAirspaceGeometry(lat, lng) {
                 try {
+                    // Validate that airspace layers are initialized
+                    if (!state.airspaceLayers) {
+                        console.error('❌ Airspace layers not initialized! Map may not be ready.');
+                        return;
+                    }
+
                     const workerUrl = state.syncSettings?.workerUrl;
                     if (!workerUrl) {
-                        console.warn('Worker URL not configured, skipping airspace geometry');
+                        console.error('❌ Airspace layers: Worker URL not configured in Settings');
+                        console.log('💡 Go to Settings tab and configure Cloudflare Worker URL to enable airspace visualization');
                         return;
                     }
 
                     console.log('🗺️ Loading airspace geometry for map visualization...');
+                    console.log(`📍 Center: [${lat.toFixed(4)}, ${lng.toFixed(4)}], Radius: 25km`);
 
                     const url = `${workerUrl}/api/airspace/geometry?lat=${lat}&lon=${lng}&radius=25000`;
+                    console.log(`🔗 Fetching: ${url}`);
+
                     const response = await fetch(url);
 
                     if (!response.ok) {
-                        console.warn('Airspace geometry API error:', response.status);
+                        console.error(`❌ Airspace geometry API error: ${response.status} ${response.statusText}`);
+                        const errorText = await response.text();
+                        console.error('Response:', errorText);
                         return;
                     }
 
                     const data = await response.json();
+                    console.log('📦 Received airspace data:', data);
 
-                    if (!data.success || !data.byClass) {
-                        console.warn('No airspace geometry data returned');
+                    if (!data.success) {
+                        console.error('❌ Airspace API returned success=false:', data.error || data.message);
+                        return;
+                    }
+
+                    if (!data.byClass) {
+                        console.warn('⚠️ No byClass data in response');
                         return;
                     }
 
                     console.log(`✅ Loaded ${data.count} airspace features`);
+                    console.log('📊 Features by class:', {
+                        'Class B': data.byClass.B?.length || 0,
+                        'Class C': data.byClass.C?.length || 0,
+                        'Class D': data.byClass.D?.length || 0,
+                        'Class E': data.byClass.E?.length || 0
+                    });
 
                     // Style configurations for each airspace class
                     const styles = {
@@ -5020,38 +5060,57 @@
                     // Add GeoJSON features to appropriate layers
                     Object.keys(data.byClass).forEach(airspaceClass => {
                         const features = data.byClass[airspaceClass];
-                        if (features.length === 0) return;
+                        if (features.length === 0) {
+                            console.log(`⚪ Class ${airspaceClass}: No features in this area`);
+                            return;
+                        }
 
                         const layerKey = `class${airspaceClass}`;
                         const layer = state.airspaceLayers[layerKey];
+
+                        if (!layer) {
+                            console.error(`❌ Layer not found for class${airspaceClass}!`);
+                            return;
+                        }
+
                         const style = styles[airspaceClass];
+                        console.log(`🔵 Processing Class ${airspaceClass}: ${features.length} features`);
 
-                        features.forEach(feature => {
-                            const geoJsonLayer = L.geoJSON(feature, {
-                                style: style,
-                                onEachFeature: function(feature, layer) {
-                                    // Add popup with airspace info
-                                    const props = feature.properties;
-                                    const popupContent = `
-                                        <div style="min-width: 150px;">
-                                            <h4 style="margin: 0 0 8px 0; color: #1e3c72;">Class ${props.CLASS_CODE} Airspace</h4>
-                                            <div style="font-size: 13px;">
-                                                <strong>${props.NAME_TXT || 'Unnamed'}</strong><br>
-                                                ${props.IDENT_TXT ? `ID: ${props.IDENT_TXT}<br>` : ''}
-                                                ${props.DISTVERTLOWER_VAL !== undefined ? `Floor: ${props.DISTVERTLOWER_VAL} ft MSL<br>` : ''}
-                                                ${props.DISTVERTUPPER_VAL !== undefined ? `Ceiling: ${props.DISTVERTUPPER_VAL} ft MSL<br>` : ''}
+                        features.forEach((feature, idx) => {
+                            try {
+                                const geoJsonLayer = L.geoJSON(feature, {
+                                    style: style,
+                                    onEachFeature: function(feature, layer) {
+                                        // Add popup with airspace info
+                                        const props = feature.properties;
+                                        const popupContent = `
+                                            <div style="min-width: 150px;">
+                                                <h4 style="margin: 0 0 8px 0; color: #1e3c72;">Class ${props.CLASS_CODE} Airspace</h4>
+                                                <div style="font-size: 13px;">
+                                                    <strong>${props.NAME_TXT || 'Unnamed'}</strong><br>
+                                                    ${props.IDENT_TXT ? `ID: ${props.IDENT_TXT}<br>` : ''}
+                                                    ${props.DISTVERTLOWER_VAL !== undefined ? `Floor: ${props.DISTVERTLOWER_VAL} ft MSL<br>` : ''}
+                                                    ${props.DISTVERTUPPER_VAL !== undefined ? `Ceiling: ${props.DISTVERTUPPER_VAL} ft MSL<br>` : ''}
+                                                </div>
                                             </div>
-                                        </div>
-                                    `;
-                                    layer.bindPopup(popupContent);
-                                }
-                            });
+                                        `;
+                                        layer.bindPopup(popupContent);
+                                    }
+                                });
 
-                            geoJsonLayer.addTo(layer);
+                                geoJsonLayer.addTo(layer);
+                                console.log(`  ✓ Added feature ${idx + 1}/${features.length}: ${feature.properties.NAME_TXT || 'Unnamed'}`);
+                            } catch (err) {
+                                console.error(`  ❌ Error adding feature ${idx + 1}:`, err, feature);
+                            }
                         });
 
-                        console.log(`Added ${features.length} Class ${airspaceClass} features to layer`);
+                        console.log(`✅ Class ${airspaceClass}: Successfully added ${features.length} features to layer`);
+                        console.log(`   Layer has ${layer.getLayers().length} total layers`);
                     });
+
+                    console.log('✅ Airspace geometry loading complete!');
+                    console.log('💡 Use the layer control (top-right) to toggle airspace visibility');
 
                 } catch (error) {
                     console.error('Error loading airspace geometry:', error);
