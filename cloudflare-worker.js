@@ -1869,15 +1869,41 @@ async function handleAirspaceClassification(lat, lon) {
     const classHierarchy = ['B', 'C', 'D', 'E', 'G', 'A']; // A is last because it starts at 18,000 ft
     const airspaceAreas = features.map(f => f.attributes).filter(a => a.CLASS_CODE);
 
-    // Filter out Class A (irrelevant for drone operations at 0-400 ft)
-    // Class A starts at 18,000 ft MSL - drones operate at max 400 ft AGL
-    const relevantAirspace = airspaceAreas.filter(a =>
-      a.CLASS_CODE !== 'A' || a.DISTVERTLOWER_VAL <= 1000
-    );
+    // CRITICAL: Filter for DRONE ALTITUDE (0-400 ft AGL, typically < 1,500 ft MSL)
+    // If Class B/C/D floor is > 1,500 ft MSL, drones fly BELOW it in Class E/G
+    const DRONE_MAX_ALTITUDE_MSL = 1500; // Conservative estimate for 400 ft AGL
+
+    const droneAltitudeAirspace = airspaceAreas.filter(a => {
+      const floor = a.DISTVERTLOWER_VAL !== -9998 ? a.DISTVERTLOWER_VAL : 0;
+      // Include if floor is at or below drone operating altitude
+      // OR if it's Class E/G (which extends to surface)
+      return floor <= DRONE_MAX_ALTITUDE_MSL || ['E', 'G'].includes(a.CLASS_CODE);
+    });
+
+    // If no airspace applies at drone altitude, default to Class G
+    if (droneAltitudeAirspace.length === 0) {
+      return jsonResponse({
+        success: true,
+        airspace: {
+          class: 'G',
+          type: 'UNCONTROLLED',
+          name: 'Class G Airspace (Below Class B/C/D floor)',
+          floor: 0,
+          ceiling: 1200,
+          laancRequired: false,
+          restrictions: [],
+          higherAirspace: airspaceAreas.slice(0, 3).map(a => ({
+            class: a.CLASS_CODE,
+            name: a.NAME_TXT,
+            floor: a.DISTVERTLOWER_VAL
+          }))
+        },
+        message: 'Class G (Uncontrolled) - Drone operations below overlying Class B/C/D floor'
+      });
+    }
 
     // Sort by most restrictive class (B is most restrictive for drone ops)
-    const sortedAirspace = relevantAirspace.length > 0 ? relevantAirspace : airspaceAreas;
-    sortedAirspace.sort((a, b) => {
+    const sortedAirspace = droneAltitudeAirspace.sort((a, b) => {
       const aIndex = classHierarchy.indexOf(a.CLASS_CODE);
       const bIndex = classHierarchy.indexOf(b.CLASS_CODE);
       return aIndex - bIndex;
@@ -1885,14 +1911,45 @@ async function handleAirspaceClassification(lat, lon) {
 
     const primaryAirspace = sortedAirspace[0] || features[0].attributes;
 
-    // Determine LAANC requirement
-    const laancRequired = ['B', 'C', 'D', 'E'].includes(primaryAirspace.CLASS_CODE);
-
-    // Parse altitude limits
+    // Parse altitude limits first
+    const floorVal = primaryAirspace.DISTVERTLOWER_VAL !== -9998 ?
+      Math.round(primaryAirspace.DISTVERTLOWER_VAL) : 0;
+    const floorRef = primaryAirspace.DISTVERTLOWER_CODE || 'MSL';
     const ceiling = primaryAirspace.DISTVERTUPPER_VAL !== -9998 ?
       Math.round(primaryAirspace.DISTVERTUPPER_VAL) : null;
-    const floor = primaryAirspace.DISTVERTLOWER_VAL !== -9998 ?
-      Math.round(primaryAirspace.DISTVERTLOWER_VAL) : 0;
+
+    // CRITICAL CHECK: Are drones flying BELOW this airspace floor?
+    // Drones operate 0-400 ft AGL (Part 107 max altitude)
+    const dronesBelowFloor = (floorRef === 'AGL' && floorVal > 400) ||
+                              (floorRef === 'SFC' && floorVal > 400) ||
+                              (floorRef === 'MSL' && floorVal > 1500);
+
+    // If drones fly below the airspace floor, they're in Class G
+    if (dronesBelowFloor) {
+      return jsonResponse({
+        success: true,
+        airspace: {
+          class: 'G',
+          type: 'UNCONTROLLED',
+          name: 'Class G Airspace (Below ' + primaryAirspace.CLASS_CODE + ' floor)',
+          floor: 0,
+          ceiling: floorVal, // Top of Class G is bottom of overlying airspace
+          laancRequired: false,
+          restrictions: [],
+          overlying: {
+            class: primaryAirspace.CLASS_CODE,
+            name: primaryAirspace.NAME_TXT,
+            floor: floorVal,
+            floorUnit: primaryAirspace.DISTVERTLOWER_UOM || 'FT',
+            floorReference: floorRef
+          }
+        },
+        message: `Class G (Uncontrolled) - Drones fly below ${primaryAirspace.CLASS_CODE} floor at ${floorVal} ${floorRef}`
+      });
+    }
+
+    // Drones are within this airspace - determine LAANC requirement
+    const laancRequired = ['B', 'C', 'D', 'E'].includes(primaryAirspace.CLASS_CODE);
 
     // Build response
     return jsonResponse({
@@ -1902,9 +1959,9 @@ async function handleAirspaceClassification(lat, lon) {
         type: primaryAirspace.TYPE_CODE || 'CLASS',
         name: primaryAirspace.NAME_TXT || 'Controlled Airspace',
         airport: primaryAirspace.ICAO_TXT || primaryAirspace.IDENT_TXT || null,
-        floor: floor,
+        floor: floorVal,
         floorUnit: primaryAirspace.DISTVERTLOWER_UOM || 'FT',
-        floorReference: primaryAirspace.DISTVERTLOWER_CODE || 'MSL',
+        floorReference: floorRef,
         ceiling: ceiling,
         ceilingUnit: primaryAirspace.DISTVERTUPPER_UOM || 'FT',
         ceilingReference: primaryAirspace.DISTVERTUPPER_CODE || 'MSL',
