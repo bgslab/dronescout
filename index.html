@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout V13.4.2 - Smart Spot Discovery</title>
+    <title>DroneScout V13.5 - Smart Spot Discovery</title>
     <!-- Build: 2025-10-31-23:50 UTC - FORCE RELOAD -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -1046,7 +1046,7 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout V13.4.2</h1>
+            <h1>🚁 DroneScout V13.5</h1>
             <p>Plan • Discover • Map • Assess • Fly • Sync • Analyze</p>
         </div>
 
@@ -4995,6 +4995,126 @@
             }
 
             /**
+             * V13.5: Build vertical airspace profile showing 0-400 ft breakdown
+             * Shows all airspace layers at click location sorted by altitude
+             */
+            function buildVerticalProfile(clickedFeature) {
+                const props = clickedFeature.properties;
+                const floor = props.DISTVERTLOWER_VAL;
+                const ceiling = props.DISTVERTUPPER_VAL;
+                const airspaceClass = props.CLASS_CODE;
+                const name = props.NAME_TXT || 'Unnamed';
+
+                // Build vertical profile display
+                let profile = `
+                    <div style="min-width: 250px;">
+                        <h4 style="margin: 0 0 8px 0; color: #1e3c72; border-bottom: 2px solid #1e3c72; padding-bottom: 4px;">
+                            📡 AIRSPACE VERTICAL PROFILE
+                        </h4>
+
+                        <div style="margin: 12px 0; padding: 10px; background: #e8f4f8; border-left: 4px solid #0066cc; border-radius: 4px;">
+                            <div style="font-weight: 600; font-size: 14px; margin-bottom: 6px;">
+                                Part 107 Operating Range (0-400 ft AGL)
+                            </div>
+                `;
+
+                // Analyze the airspace layer
+                const affectsPart107 = floor !== undefined && floor <= 400;
+
+                if (affectsPart107) {
+                    const topOfLayer = Math.min(ceiling || 400, 400);
+                    profile += `
+                        <div style="margin: 8px 0; padding: 8px; background: white; border-radius: 4px; border-left: 3px solid ${airspaceClass === 'B' ? '#ff0000' : airspaceClass === 'C' ? '#ff00ff' : airspaceClass === 'D' ? '#0000ff' : '#00ff00'};">
+                            <div style="font-size: 13px; font-weight: 600;">
+                                ✓ ${floor}-${topOfLayer} ft MSL: Class ${airspaceClass}
+                            </div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                └─ ${name}
+                            </div>
+                    `;
+
+                    // Add authorization info
+                    if (airspaceClass === 'B' || airspaceClass === 'C' || airspaceClass === 'D') {
+                        profile += `
+                            <div style="font-size: 12px; color: #dc3545; margin-top: 4px; font-weight: 600;">
+                                └─ ⚠️ Authorization Required
+                            </div>
+                        `;
+                    }
+
+                    profile += `</div>`;
+
+                    // Show if layer extends above Part 107 ceiling
+                    if (ceiling && ceiling > 400) {
+                        profile += `
+                            <div style="margin: 8px 0; padding: 6px; background: #f8f9fa; border-radius: 4px; font-size: 11px; color: #666;">
+                                📊 ${401}-${ceiling} ft MSL: Class ${airspaceClass} (above Part 107 ceiling)
+                            </div>
+                        `;
+                    }
+                } else {
+                    // Floor is above 400 ft - shouldn't happen due to filtering, but just in case
+                    profile += `
+                        <div style="margin: 8px 0; padding: 8px; background: #d4edda; border-radius: 4px; font-size: 12px; color: #155724;">
+                            ✓ No airspace restrictions in 0-400 ft range
+                        </div>
+                        <div style="margin: 8px 0; padding: 6px; background: #f8f9fa; border-radius: 4px; font-size: 11px; color: #666;">
+                            📊 ${floor}-${ceiling} ft MSL: Class ${airspaceClass} (above you)
+                        </div>
+                    `;
+                }
+
+                profile += `</div>`;
+
+                // Add altitude details section
+                profile += `
+                    <div style="margin-top: 12px; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                        <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;">Altitude Limits:</div>
+                        <div style="font-size: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                            <div>Floor: <strong>${floor !== undefined ? floor : 'Unknown'} ft MSL</strong></div>
+                            <div>Ceiling: <strong>${ceiling !== undefined ? ceiling : 'Unknown'} ft MSL</strong></div>
+                        </div>
+                    </div>
+                `;
+
+                // Add status warning
+                if (affectsPart107) {
+                    if (floor === 0) {
+                        profile += `
+                            <div style="margin-top: 12px; padding: 10px; background: #f8d7da; border-left: 4px solid #dc3545; border-radius: 4px;">
+                                <div style="color: #721c24; font-weight: 600; font-size: 13px;">
+                                    🚫 BLOCKS ALL DRONE OPERATIONS
+                                </div>
+                                <div style="color: #721c24; font-size: 11px; margin-top: 4px;">
+                                    Contact ${name} for authorization
+                                </div>
+                            </div>
+                        `;
+                    } else if (airspaceClass === 'B' || airspaceClass === 'C' || airspaceClass === 'D') {
+                        profile += `
+                            <div style="margin-top: 12px; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                                <div style="color: #856404; font-weight: 600; font-size: 13px;">
+                                    ⚠️ AUTHORIZATION REQUIRED
+                                </div>
+                                <div style="color: #856404; font-size: 11px; margin-top: 4px;">
+                                    ${airspaceClass === 'B' ? 'ATC clearance required' : 'Tower/ATC authorization required'}
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+
+                profile += `
+                    <div style="margin-top: 12px; padding: 8px; background: #e7f3ff; border-radius: 4px; font-size: 11px; color: #0066cc;">
+                        ℹ️ Part 107 operates 0-400 ft AGL. Check NOTAMs and TFRs before flight.
+                    </div>
+                </div>
+                `;
+
+                return profile;
+            }
+
+            /**
              * V13.4.2: Helper to add layer control regardless of data load success
              */
             function addLayerControlAnyway() {
@@ -5087,12 +5207,28 @@
                         'Class E': data.byClass.E?.length || 0
                     });
 
-                    // Style configurations for each airspace class
-                    const styles = {
-                        B: { color: '#ff0000', fillColor: '#ff0000', fillOpacity: 0.15, weight: 2 },
-                        C: { color: '#ff00ff', fillColor: '#ff00ff', fillOpacity: 0.15, weight: 2 },
-                        D: { color: '#0000ff', fillColor: '#0000ff', fillOpacity: 0.15, weight: 2 },
-                        E: { color: '#ff00ff', fillColor: '#ff00ff', fillOpacity: 0.1, weight: 1, dashArray: '5, 5' }
+                    // V13.5: Helper to calculate opacity based on floor altitude
+                    // Lower floors = darker/more opaque (greater restriction impact)
+                    const getOpacityForFloor = (floor) => {
+                        if (floor === null || floor === undefined) return 0.15;
+                        if (floor === 0) return 0.3;           // Surface - blocks all ops
+                        if (floor <= 300) return 0.2;          // Low altitude - restricts upper ops
+                        return 0.15;                           // Higher floors - marginal impact
+                    };
+
+                    // V13.5: Generate style based on airspace class and floor altitude
+                    const getStyleForFeature = (airspaceClass, floor) => {
+                        const opacity = getOpacityForFloor(floor);
+
+                        const baseStyles = {
+                            B: { color: '#ff0000', fillColor: '#ff0000', weight: 2 },
+                            C: { color: '#ff00ff', fillColor: '#ff00ff', weight: 2 },
+                            D: { color: '#0000ff', fillColor: '#0000ff', weight: 2 },
+                            E: { color: '#00ff00', fillColor: '#00ff00', weight: 1, dashArray: '5, 5' }
+                        };
+
+                        const style = baseStyles[airspaceClass] || baseStyles.E;
+                        return { ...style, fillOpacity: opacity };
                     };
 
                     // Add GeoJSON features to appropriate layers
@@ -5111,47 +5247,19 @@
                             return;
                         }
 
-                        const style = styles[airspaceClass];
                         console.log(`🔵 Processing Class ${airspaceClass}: ${features.length} features`);
 
                         features.forEach((feature, idx) => {
                             try {
+                                // V13.5: Use dynamic styling based on floor altitude
+                                const floor = feature.properties.DISTVERTLOWER_VAL;
+                                const dynamicStyle = getStyleForFeature(airspaceClass, floor);
+
                                 const geoJsonLayer = L.geoJSON(feature, {
-                                    style: style,
+                                    style: dynamicStyle,
                                     onEachFeature: function(feature, layer) {
-                                        // Add popup with airspace info
-                                        const props = feature.properties;
-                                        const floor = props.DISTVERTLOWER_VAL;
-                                        const ceiling = props.DISTVERTUPPER_VAL;
-
-                                        // Determine Part 107 impact
-                                        let impactNote = '';
-                                        if (floor !== undefined && floor <= 500) {
-                                            if (floor === 0) {
-                                                impactNote = '<div style="color: #dc3545; font-weight: 600; margin-top: 8px;">⚠️ BLOCKS ALL DRONE OPS</div>';
-                                            } else {
-                                                impactNote = '<div style="color: #ffc107; font-weight: 600; margin-top: 8px;">⚠️ Affects Part 107 operations</div>';
-                                            }
-                                        }
-
-                                        const popupContent = `
-                                            <div style="min-width: 200px;">
-                                                <h4 style="margin: 0 0 8px 0; color: #1e3c72;">Class ${props.CLASS_CODE} Airspace</h4>
-                                                <div style="font-size: 13px;">
-                                                    <strong>${props.NAME_TXT || 'Unnamed'}</strong><br>
-                                                    ${props.IDENT_TXT ? `ID: ${props.IDENT_TXT}<br>` : ''}
-                                                </div>
-                                                <div style="margin-top: 8px; padding: 8px; background: #f8f9fa; border-radius: 4px; font-size: 12px;">
-                                                    <strong>Altitude Limits:</strong><br>
-                                                    Floor: <strong>${floor !== undefined ? floor + ' ft MSL' : 'Unknown'}</strong><br>
-                                                    Ceiling: <strong>${ceiling !== undefined ? ceiling + ' ft MSL' : 'Unknown'}</strong>
-                                                </div>
-                                                ${impactNote}
-                                                <div style="font-size: 11px; color: #666; margin-top: 8px;">
-                                                    Part 107 limit: 400 ft AGL
-                                                </div>
-                                            </div>
-                                        `;
+                                        // V13.5: Use enhanced vertical profile popup
+                                        const popupContent = buildVerticalProfile(feature);
                                         layer.bindPopup(popupContent);
                                     }
                                 });
