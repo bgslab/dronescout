@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout V13.5 - Smart Spot Discovery</title>
+    <title>DroneScout V13.5.1 - Smart Spot Discovery</title>
     <!-- Build: 2025-10-31-23:50 UTC - FORCE RELOAD -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -1046,7 +1046,7 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout V13.5</h1>
+            <h1>🚁 DroneScout V13.5.1</h1>
             <p>Plan • Discover • Map • Assess • Fly • Sync • Analyze</p>
         </div>
 
@@ -5077,27 +5077,42 @@
                     </div>
                 `;
 
-                // Add status warning
+                // Add status warning (only for controlled airspace B/C/D)
                 if (affectsPart107) {
-                    if (floor === 0) {
+                    // Class B, C, D require authorization
+                    if (airspaceClass === 'B' || airspaceClass === 'C' || airspaceClass === 'D') {
+                        if (floor === 0) {
+                            profile += `
+                                <div style="margin-top: 12px; padding: 10px; background: #f8d7da; border-left: 4px solid #dc3545; border-radius: 4px;">
+                                    <div style="color: #721c24; font-weight: 600; font-size: 13px;">
+                                        🚫 AUTHORIZATION REQUIRED
+                                    </div>
+                                    <div style="color: #721c24; font-size: 11px; margin-top: 4px;">
+                                        ${airspaceClass === 'B' ? 'ATC clearance required' : 'Contact tower for authorization'}
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            profile += `
+                                <div style="margin-top: 12px; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                                    <div style="color: #856404; font-weight: 600; font-size: 13px;">
+                                        ⚠️ AUTHORIZATION REQUIRED
+                                    </div>
+                                    <div style="color: #856404; font-size: 11px; margin-top: 4px;">
+                                        ${airspaceClass === 'B' ? 'ATC clearance required' : 'Tower/ATC authorization required'}
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    } else {
+                        // Class E (and G) - no authorization required
                         profile += `
-                            <div style="margin-top: 12px; padding: 10px; background: #f8d7da; border-left: 4px solid #dc3545; border-radius: 4px;">
-                                <div style="color: #721c24; font-weight: 600; font-size: 13px;">
-                                    🚫 BLOCKS ALL DRONE OPERATIONS
+                            <div style="margin-top: 12px; padding: 10px; background: #d4edda; border-left: 4px solid #28a745; border-radius: 4px;">
+                                <div style="color: #155724; font-weight: 600; font-size: 13px;">
+                                    ✅ NO AUTHORIZATION REQUIRED
                                 </div>
-                                <div style="color: #721c24; font-size: 11px; margin-top: 4px;">
-                                    Contact ${name} for authorization
-                                </div>
-                            </div>
-                        `;
-                    } else if (airspaceClass === 'B' || airspaceClass === 'C' || airspaceClass === 'D') {
-                        profile += `
-                            <div style="margin-top: 12px; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
-                                <div style="color: #856404; font-weight: 600; font-size: 13px;">
-                                    ⚠️ AUTHORIZATION REQUIRED
-                                </div>
-                                <div style="color: #856404; font-size: 11px; margin-top: 4px;">
-                                    ${airspaceClass === 'B' ? 'ATC clearance required' : 'Tower/ATC authorization required'}
+                                <div style="color: #155724; font-size: 11px; margin-top: 4px;">
+                                    Class ${airspaceClass} - Uncontrolled airspace for Part 107 ops
                                 </div>
                             </div>
                         `;

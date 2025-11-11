@@ -204,22 +204,32 @@
                     </div>
             `;
 
-            if (affectsPart107 && floor === 0) {
-                profile += `
-                    <div style="margin-top: 12px; padding: 10px; background: #f8d7da; border-left: 4px solid #dc3545; border-radius: 4px;">
-                        <div style="color: #721c24; font-weight: 600; font-size: 13px;">
-                            🚫 BLOCKS ALL DRONE OPERATIONS
+            // Add status warning (only for controlled airspace B/C/D)
+            if (affectsPart107) {
+                if (airspaceClass === 'B' || airspaceClass === 'C' || airspaceClass === 'D') {
+                    profile += `
+                        <div style="margin-top: 12px; padding: 10px; background: ${floor === 0 ? '#f8d7da' : '#fff3cd'}; border-left: 4px solid ${floor === 0 ? '#dc3545' : '#ffc107'}; border-radius: 4px;">
+                            <div style="color: ${floor === 0 ? '#721c24' : '#856404'}; font-weight: 600; font-size: 13px;">
+                                ${floor === 0 ? '🚫' : '⚠️'} AUTHORIZATION REQUIRED
+                            </div>
+                            <div style="color: ${floor === 0 ? '#721c24' : '#856404'}; font-size: 11px; margin-top: 4px;">
+                                ${airspaceClass === 'B' ? 'ATC clearance required' : 'Contact tower for authorization'}
+                            </div>
                         </div>
-                    </div>
-                `;
-            } else if (affectsPart107 && (airspaceClass === 'B' || airspaceClass === 'C' || airspaceClass === 'D')) {
-                profile += `
-                    <div style="margin-top: 12px; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
-                        <div style="color: #856404; font-weight: 600; font-size: 13px;">
-                            ⚠️ AUTHORIZATION REQUIRED
+                    `;
+                } else {
+                    // Class E (and G) - no authorization required
+                    profile += `
+                        <div style="margin-top: 12px; padding: 10px; background: #d4edda; border-left: 4px solid #28a745; border-radius: 4px;">
+                            <div style="color: #155724; font-weight: 600; font-size: 13px;">
+                                ✅ NO AUTHORIZATION REQUIRED
+                            </div>
+                            <div style="color: #155724; font-size: 11px; margin-top: 4px;">
+                                Class ${airspaceClass} - Uncontrolled airspace for Part 107 ops
+                            </div>
                         </div>
-                    </div>
-                `;
+                    `;
+                }
             }
 
             profile += `
