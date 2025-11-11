@@ -2006,17 +2006,22 @@ async function handleAirspaceClassification(lat, lon) {
  */
 async function handleAirspaceGeometry(lat, lon, radiusMeters) {
   try {
+    // V13.4.2: Convert string params to numbers to prevent string concatenation bugs
+    const latNum = parseFloat(lat);
+    const lonNum = parseFloat(lon);
+    const radiusNum = parseFloat(radiusMeters);
+
     // Create bounding box from center point + radius
     // Rough conversion: 1 degree ≈ 111km at equator
-    const radiusKm = radiusMeters / 1000;
+    const radiusKm = radiusNum / 1000;
     const latOffset = radiusKm / 111;
-    const lonOffset = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
+    const lonOffset = radiusKm / (111 * Math.cos(latNum * Math.PI / 180));
 
     const bbox = {
-      xmin: lon - lonOffset,
-      ymin: lat - latOffset,
-      xmax: lon + lonOffset,
-      ymax: lat + latOffset
+      xmin: lonNum - lonOffset,
+      ymin: latNum - latOffset,
+      xmax: lonNum + lonOffset,
+      ymax: latNum + latOffset
     };
 
     // Query FAA Airspace with geometry
