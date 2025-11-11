@@ -5076,7 +5076,10 @@
                         return;
                     }
 
-                    console.log(`✅ Loaded ${data.count} airspace features`);
+                    console.log(`✅ Loaded ${data.count} airspace features (floor ≤ 500 ft MSL)`);
+                    if (data.totalCount && data.totalCount > data.count) {
+                        console.log(`   📊 Filtered for Part 107 relevance: ${data.totalCount} total → ${data.count} relevant (excluded ${data.excludedCount} high-altitude areas)`);
+                    }
                     console.log('📊 Features by class:', {
                         'Class B': data.byClass.B?.length || 0,
                         'Class C': data.byClass.C?.length || 0,
@@ -5118,14 +5121,34 @@
                                     onEachFeature: function(feature, layer) {
                                         // Add popup with airspace info
                                         const props = feature.properties;
+                                        const floor = props.DISTVERTLOWER_VAL;
+                                        const ceiling = props.DISTVERTUPPER_VAL;
+
+                                        // Determine Part 107 impact
+                                        let impactNote = '';
+                                        if (floor !== undefined && floor <= 500) {
+                                            if (floor === 0) {
+                                                impactNote = '<div style="color: #dc3545; font-weight: 600; margin-top: 8px;">⚠️ BLOCKS ALL DRONE OPS</div>';
+                                            } else {
+                                                impactNote = '<div style="color: #ffc107; font-weight: 600; margin-top: 8px;">⚠️ Affects Part 107 operations</div>';
+                                            }
+                                        }
+
                                         const popupContent = `
-                                            <div style="min-width: 150px;">
+                                            <div style="min-width: 200px;">
                                                 <h4 style="margin: 0 0 8px 0; color: #1e3c72;">Class ${props.CLASS_CODE} Airspace</h4>
                                                 <div style="font-size: 13px;">
                                                     <strong>${props.NAME_TXT || 'Unnamed'}</strong><br>
                                                     ${props.IDENT_TXT ? `ID: ${props.IDENT_TXT}<br>` : ''}
-                                                    ${props.DISTVERTLOWER_VAL !== undefined ? `Floor: ${props.DISTVERTLOWER_VAL} ft MSL<br>` : ''}
-                                                    ${props.DISTVERTUPPER_VAL !== undefined ? `Ceiling: ${props.DISTVERTUPPER_VAL} ft MSL<br>` : ''}
+                                                </div>
+                                                <div style="margin-top: 8px; padding: 8px; background: #f8f9fa; border-radius: 4px; font-size: 12px;">
+                                                    <strong>Altitude Limits:</strong><br>
+                                                    Floor: <strong>${floor !== undefined ? floor + ' ft MSL' : 'Unknown'}</strong><br>
+                                                    Ceiling: <strong>${ceiling !== undefined ? ceiling + ' ft MSL' : 'Unknown'}</strong>
+                                                </div>
+                                                ${impactNote}
+                                                <div style="font-size: 11px; color: #666; margin-top: 8px;">
+                                                    Part 107 limit: 400 ft AGL
                                                 </div>
                                             </div>
                                         `;

@@ -173,6 +173,9 @@
                 log('📦 Received data:', JSON.stringify({
                     success: data.success,
                     count: data.count,
+                    totalCount: data.totalCount,
+                    excludedCount: data.excludedCount,
+                    maxFloor: data.maxFloor,
                     classes: {
                         B: data.byClass?.B?.length || 0,
                         C: data.byClass?.C?.length || 0,
@@ -180,6 +183,10 @@
                         E: data.byClass?.E?.length || 0
                     }
                 }));
+
+                if (data.totalCount && data.totalCount > data.count) {
+                    log(`📊 Altitude filtering: ${data.totalCount} total → ${data.count} relevant (excluded ${data.excludedCount} features with floor > ${data.maxFloor} ft MSL)`);
+                }
 
                 if (!data.success) {
                     log(`❌ API returned success=false: ${data.error || data.message}`);
@@ -228,13 +235,33 @@
                                 style: style,
                                 onEachFeature: function(feature, layer) {
                                     const props = feature.properties;
+                                    const floor = props.DISTVERTLOWER_VAL;
+                                    const ceiling = props.DISTVERTUPPER_VAL;
+
+                                    // Determine Part 107 impact
+                                    let impactNote = '';
+                                    if (floor !== undefined && floor <= 500) {
+                                        if (floor === 0) {
+                                            impactNote = '<div style="color: #dc3545; font-weight: 600; margin-top: 8px;">⚠️ BLOCKS ALL DRONE OPS</div>';
+                                        } else {
+                                            impactNote = '<div style="color: #ffc107; font-weight: 600; margin-top: 8px;">⚠️ Affects Part 107 operations</div>';
+                                        }
+                                    }
+
                                     const popupContent = `
-                                        <div style="min-width: 150px;">
+                                        <div style="min-width: 200px;">
                                             <h4>Class ${props.CLASS_CODE} Airspace</h4>
                                             <strong>${props.NAME_TXT || 'Unnamed'}</strong><br>
                                             ${props.IDENT_TXT ? `ID: ${props.IDENT_TXT}<br>` : ''}
-                                            ${props.DISTVERTLOWER_VAL !== undefined ? `Floor: ${props.DISTVERTLOWER_VAL} ft MSL<br>` : ''}
-                                            ${props.DISTVERTUPPER_VAL !== undefined ? `Ceiling: ${props.DISTVERTUPPER_VAL} ft MSL` : ''}
+                                            <div style="margin-top: 8px; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                                                <strong>Altitude Limits:</strong><br>
+                                                Floor: <strong>${floor !== undefined ? floor + ' ft MSL' : 'Unknown'}</strong><br>
+                                                Ceiling: <strong>${ceiling !== undefined ? ceiling + ' ft MSL' : 'Unknown'}</strong>
+                                            </div>
+                                            ${impactNote}
+                                            <div style="font-size: 11px; color: #666; margin-top: 8px;">
+                                                Part 107 limit: 400 ft AGL
+                                            </div>
                                         </div>
                                     `;
                                     layer.bindPopup(popupContent);

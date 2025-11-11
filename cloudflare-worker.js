@@ -2060,18 +2060,37 @@ async function handleAirspaceGeometry(lat, lon, radiusMeters) {
       E: []
     };
 
+    // V13.4.2: Filter airspace by floor altitude for Part 107 relevance
+    // Only include airspace with floor ≤ 500 ft MSL (affects 400 ft AGL operations)
+    const MAX_RELEVANT_FLOOR = 500; // ft MSL
+    let filteredCount = 0;
+    let excludedCount = 0;
+
     if (geojson.features) {
       geojson.features.forEach(feature => {
         const airspaceClass = feature.properties.CLASS_CODE;
-        if (byClass[airspaceClass]) {
-          byClass[airspaceClass].push(feature);
+        const floor = feature.properties.DISTVERTLOWER_VAL;
+
+        // Only include if floor is low enough to affect Part 107 ops
+        if (floor !== null && floor !== undefined && floor <= MAX_RELEVANT_FLOOR) {
+          if (byClass[airspaceClass]) {
+            byClass[airspaceClass].push(feature);
+            filteredCount++;
+          }
+        } else {
+          excludedCount++;
         }
       });
     }
 
+    console.log(`Airspace filtering: ${filteredCount} features included, ${excludedCount} excluded (floor > ${MAX_RELEVANT_FLOOR} ft MSL)`);
+
     return jsonResponse({
       success: true,
-      count: geojson.features?.length || 0,
+      count: filteredCount, // V13.4.2: Return filtered count, not total count
+      totalCount: geojson.features?.length || 0,
+      excludedCount: excludedCount,
+      maxFloor: MAX_RELEVANT_FLOOR,
       geojson: geojson,
       byClass: byClass,
       bbox: bbox
