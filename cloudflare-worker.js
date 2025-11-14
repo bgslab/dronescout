@@ -622,10 +622,10 @@ async function handleFlightDetails(flightId, apiToken) {
  * Uses Skydio Cloud API v0 (Organization API tokens)
  */
 async function handleFlightMedia(flightId, apiToken) {
-  // v0 API: /api/v0/flight_data_files?flight_id={id}
+  // FIXED V13.5.2: Correct endpoint is /api/v0/media_files (not flight_data_files)
   // NOTE: All v0 endpoints use direct token (no Bearer)
   const response = await fetch(
-    `${SKYDIO_API_BASE}/api/v0/flight_data_files?flight_id=${flightId}`,
+    `${SKYDIO_API_BASE}/api/v0/media_files?flight_id=${flightId}`,
     {
       headers: {
         'Authorization': apiToken,
@@ -646,19 +646,45 @@ async function handleFlightMedia(flightId, apiToken) {
 
   const data = await response.json();
 
-  // v0 response: { data: { flight_data_files: [...] }, meta: {...}, status_code: 200 }
-  const files = data.data?.flight_data_files || data.data || [];
+  // Enhanced logging for debugging (V13.5.2)
+  console.log('Flight Media API Response:', {
+    flightId,
+    statusCode: data.status_code,
+    fileCount: data.data?.files?.length || 0,
+    hasData: !!data.data,
+    hasFiles: !!(data.data?.files),
+  });
 
-  // Format flight data files for app
+  // v0 response: { data: { files: [...], pagination: {...} }, meta: {...}, status_code: 200 }
+  // Response uses 'files' not 'media_files'
+  const files = data.data?.files || [];
+
+  // Log individual file details if any exist
+  if (files.length > 0) {
+    console.log('Media files found:', files.map(f => ({
+      uuid: f.uuid,
+      filename: f.filename,
+      kind: f.kind,
+      size: f.size,
+      capturedTime: f.captured_time
+    })));
+  }
+
+  // Format media files for app
+  // API response fields: uuid, filename, kind, size, download_url, captured_time, uploaded_time
   const media = files.map(file => ({
-    fileId: file.file_id || file.id,
-    fileName: file.file_name,
-    fileType: file.file_type, // e.g., 'VIDEO', 'PHOTO', 'LOG'
-    sizeBytes: file.size_bytes,
-    createdAt: file.created_at,
-    // Download URL format: /api/v0/flight_data_files/{file_id}
-    downloadUrl: `${SKYDIO_API_BASE}/api/v0/flight_data_files/${file.file_id || file.id}`,
-    metadata: file.metadata || {},
+    fileId: file.uuid,
+    fileName: file.filename,
+    fileType: file.kind, // e.g., 'vehicleVideoRaw', 'vehicleVideoPreview', 'vehicleImage'
+    sizeBytes: file.size,
+    createdAt: file.captured_time || file.uploaded_time,
+    // API already provides download_url!
+    downloadUrl: file.download_url,
+    // Construct thumbnail URL from uuid
+    thumbnailUrl: `${SKYDIO_API_BASE}/api/v0/media/download/${file.uuid}/thumbnail`,
+    sha256: file.sha256,
+    capturedTime: file.captured_time,
+    uploadedTime: file.uploaded_time,
   }));
 
   return jsonResponse({
