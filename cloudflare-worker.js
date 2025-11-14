@@ -623,9 +623,10 @@ async function handleFlightDetails(flightId, apiToken) {
  */
 async function handleFlightMedia(flightId, apiToken) {
   // FIXED V13.5.2: Correct endpoint is /api/v0/media_files (not flight_data_files)
+  // FIXED V13.5.3: Add pre_signed_download_urls=true to get URLs that don't require auth
   // NOTE: All v0 endpoints use direct token (no Bearer)
   const response = await fetch(
-    `${SKYDIO_API_BASE}/api/v0/media_files?flight_id=${flightId}`,
+    `${SKYDIO_API_BASE}/api/v0/media_files?flight_id=${flightId}&pre_signed_download_urls=true`,
     {
       headers: {
         'Authorization': apiToken,
