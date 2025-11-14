@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout V13.5.3 - Smart Spot Discovery</title>
+    <title>DroneScout V13.5.4 - Smart Spot Discovery</title>
     <!-- Build: 2025-10-31-23:50 UTC - FORCE RELOAD -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -1046,7 +1046,7 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout V13.5.3</h1>
+            <h1>🚁 DroneScout V13.5.4</h1>
             <p>Plan • Discover • Map • Assess • Fly • Sync • Analyze</p>
         </div>
 
@@ -4774,11 +4774,27 @@
 
             /**
              * V13.3: Render media gallery for flight photos/videos
+             * V13.5.3: Generate meaningful download filenames from flight data
              */
-            function renderMediaGallery(mediaDetails, flightId) {
+            function renderMediaGallery(mediaDetails, flight) {
                 if (!mediaDetails || mediaDetails.length === 0) {
                     return '<div style="text-align: center; color: #666;">No media files found for this flight</div>';
                 }
+
+                // Generate base filename from flight location and date
+                // Format: LocationName-YYYY-MM-DD-HH-MM
+                const baseFilename = (() => {
+                    const locationPart = flight.locationName
+                        ? flight.locationName.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').substring(0, 40)
+                        : 'Flight';
+
+                    const datePart = flight.startTime
+                        ? new Date(flight.startTime).toISOString().split('T')[0] + '-' +
+                          new Date(flight.startTime).toTimeString().substring(0,5).replace(':','-')
+                        : 'Unknown-Date';
+
+                    return `${locationPart}-${datePart}`;
+                })();
 
                 // Separate photos and videos based on Skydio API fileType (kind) values
                 // API returns: vehicleImage, vehicleImageDng, vehicleVideoRaw, vehicleVideoPreview, videoTelemetryCsv
@@ -4794,7 +4810,10 @@
                         <div style="margin-bottom: 16px;">
                             <h4 style="font-size: 14px; color: #1e3c72; margin-bottom: 8px;">📷 Photos (${photos.length})</h4>
                             <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px;">
-                                ${photos.map(photo => `
+                                ${photos.map((photo, idx) => {
+                                    const ext = photo.fileName ? photo.fileName.split('.').pop() : 'jpg';
+                                    const customFilename = `${baseFilename}-photo-${idx + 1}.${ext}`;
+                                    return `
                                     <div style="position: relative; background: #e9ecef; border-radius: 6px; overflow: hidden; aspect-ratio: 16/9;">
                                         <a href="${photo.downloadUrl}" target="_blank" style="display: block; width: 100%; height: 100%; position: relative;">
                                             ${photo.thumbnailUrl ? `
@@ -4809,12 +4828,12 @@
                                             `}
                                         </a>
                                         <div style="position: absolute; top: 4px; right: 4px;">
-                                            <a href="${photo.downloadUrl}" download style="background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none;">
+                                            <a href="${photo.downloadUrl}" download="${customFilename}" style="background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none;">
                                                 ⬇️
                                             </a>
                                         </div>
                                     </div>
-                                `).join('')}
+                                `}).join('')}
                             </div>
                         </div>
                     `;
@@ -4826,7 +4845,10 @@
                         <div style="margin-bottom: 16px;">
                             <h4 style="font-size: 14px; color: #1e3c72; margin-bottom: 8px;">🎥 Videos (${videos.length})</h4>
                             <div style="display: flex; flex-direction: column; gap: 8px;">
-                                ${videos.map(video => `
+                                ${videos.map((video, idx) => {
+                                    const ext = video.fileName ? video.fileName.split('.').pop() : 'mp4';
+                                    const customFilename = `${baseFilename}-video-${idx + 1}.${ext}`;
+                                    return `
                                     <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: white; border-radius: 6px; border: 1px solid #e0e0e0;">
                                         <div style="flex: 1;">
                                             <div style="font-weight: 600; color: #333; font-size: 13px;">${video.fileName || 'Video'}</div>
@@ -4834,11 +4856,11 @@
                                                 ${(video.sizeBytes / 1024 / 1024).toFixed(1)}MB
                                             </div>
                                         </div>
-                                        <a href="${video.downloadUrl}" target="_blank" class="btn-small" style="margin: 0;">
+                                        <a href="${video.downloadUrl}" download="${customFilename}" target="_blank" class="btn-small" style="margin: 0;">
                                             ⬇️ Download
                                         </a>
                                     </div>
-                                `).join('')}
+                                `}).join('')}
                             </div>
                         </div>
                     `;
@@ -4850,12 +4872,15 @@
                         <details style="margin-top: 8px;">
                             <summary style="cursor: pointer; font-size: 12px; color: #666;">📋 Flight Logs (${logs.length})</summary>
                             <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px;">
-                                ${logs.map(log => `
+                                ${logs.map((log, idx) => {
+                                    const ext = log.fileName ? log.fileName.split('.').pop() : 'csv';
+                                    const customFilename = `${baseFilename}-log-${idx + 1}.${ext}`;
+                                    return `
                                     <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: #f8f9fa; border-radius: 4px;">
                                         <div style="font-size: 11px; color: #666;">${log.fileName}</div>
-                                        <a href="${log.downloadUrl}" download style="font-size: 11px; color: #1e3c72;">⬇️</a>
+                                        <a href="${log.downloadUrl}" download="${customFilename}" style="font-size: 11px; color: #1e3c72;">⬇️</a>
                                     </div>
-                                `).join('')}
+                                `}).join('')}
                             </div>
                         </details>
                     `;
@@ -4867,7 +4892,10 @@
                         <div style="margin-bottom: 16px;">
                             <h4 style="font-size: 14px; color: #1e3c72; margin-bottom: 8px;">📁 Media Files (${mediaDetails.length})</h4>
                             <div style="display: flex; flex-direction: column; gap: 8px;">
-                                ${mediaDetails.map(file => `
+                                ${mediaDetails.map((file, idx) => {
+                                    const ext = file.fileName ? file.fileName.split('.').pop() : 'bin';
+                                    const customFilename = `${baseFilename}-file-${idx + 1}.${ext}`;
+                                    return `
                                     <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: white; border-radius: 6px; border: 1px solid #e0e0e0;">
                                         <div style="flex: 1;">
                                             <div style="font-weight: 600; color: #333; font-size: 13px;">${file.fileName || 'File'}</div>
@@ -4875,11 +4903,11 @@
                                                 ${file.fileType || 'Unknown type'} • ${(file.sizeBytes / 1024 / 1024).toFixed(1)}MB
                                             </div>
                                         </div>
-                                        <a href="${file.downloadUrl}" target="_blank" class="btn-small" style="margin: 0;">
+                                        <a href="${file.downloadUrl}" download="${customFilename}" target="_blank" class="btn-small" style="margin: 0;">
                                             ⬇️ Download
                                         </a>
                                     </div>
-                                `).join('')}
+                                `}).join('')}
                             </div>
                         </div>
                     `;
@@ -6492,7 +6520,7 @@
                                             <div style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-top: 8px;">
                                                 <div class="media-container-${flight.id}">
                                                     ${flight.mediaDetails && flight.mediaDetails.length > 0 ? `
-                                                        ${renderMediaGallery(flight.mediaDetails, flight.id)}
+                                                        ${renderMediaGallery(flight.mediaDetails, flight)}
                                                     ` : `
                                                         <div style="text-align: center; padding: 20px; color: #666;">
                                                             <div class="media-loading-${flight.id}" style="display: none;">
