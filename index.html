@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout V13.5.2 - Smart Spot Discovery</title>
+    <title>DroneScout V13.5.3 - Smart Spot Discovery</title>
     <!-- Build: 2025-10-31-23:50 UTC - FORCE RELOAD -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -1046,7 +1046,7 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout V13.5.2</h1>
+            <h1>🚁 DroneScout V13.5.3</h1>
             <p>Plan • Discover • Map • Assess • Fly • Sync • Analyze</p>
         </div>
 
@@ -4780,10 +4780,11 @@
                     return '<div style="text-align: center; color: #666;">No media files found for this flight</div>';
                 }
 
-                // Separate photos and videos
-                const photos = mediaDetails.filter(m => m.fileType === 'PHOTO');
-                const videos = mediaDetails.filter(m => m.fileType === 'VIDEO');
-                const logs = mediaDetails.filter(m => m.fileType === 'LOG');
+                // Separate photos and videos based on Skydio API fileType (kind) values
+                // API returns: vehicleImage, vehicleImageDng, vehicleVideoRaw, vehicleVideoPreview, videoTelemetryCsv
+                const photos = mediaDetails.filter(m => m.fileType && (m.fileType.includes('Image') || m.fileType === 'PHOTO'));
+                const videos = mediaDetails.filter(m => m.fileType && (m.fileType.includes('Video') || m.fileType === 'VIDEO'));
+                const logs = mediaDetails.filter(m => m.fileType && (m.fileType.includes('Csv') || m.fileType.includes('Telemetry') || m.fileType === 'LOG'));
 
                 let html = '';
 
@@ -4857,6 +4858,30 @@
                                 `).join('')}
                             </div>
                         </details>
+                    `;
+                }
+
+                // Fallback: if no categorized media but mediaDetails has items, show all as generic files
+                if (html === '' && mediaDetails.length > 0) {
+                    html += `
+                        <div style="margin-bottom: 16px;">
+                            <h4 style="font-size: 14px; color: #1e3c72; margin-bottom: 8px;">📁 Media Files (${mediaDetails.length})</h4>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                ${mediaDetails.map(file => `
+                                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: white; border-radius: 6px; border: 1px solid #e0e0e0;">
+                                        <div style="flex: 1;">
+                                            <div style="font-weight: 600; color: #333; font-size: 13px;">${file.fileName || 'File'}</div>
+                                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                                ${file.fileType || 'Unknown type'} • ${(file.sizeBytes / 1024 / 1024).toFixed(1)}MB
+                                            </div>
+                                        </div>
+                                        <a href="${file.downloadUrl}" target="_blank" class="btn-small" style="margin: 0;">
+                                            ⬇️ Download
+                                        </a>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
                     `;
                 }
 
