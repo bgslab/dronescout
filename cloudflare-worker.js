@@ -2088,8 +2088,10 @@ async function handleAirspaceGeometry(lat, lon, radiusMeters) {
     };
 
     // V13.4.2: Filter airspace by floor altitude for Part 107 relevance
-    // Only include airspace with floor ≤ 500 ft MSL (affects 400 ft AGL operations)
-    const MAX_RELEVANT_FLOOR = 500; // ft MSL
+    // V13.6: Increased from 500 to 15000 ft MSL to support high-elevation airports
+    // (Denver is 5,431 ft MSL, Leadville CO is 9,934 ft MSL)
+    // This filters only very high outer rings while showing all relevant airspace
+    const MAX_RELEVANT_FLOOR = 15000; // ft MSL
     let filteredCount = 0;
     let excludedCount = 0;
 
