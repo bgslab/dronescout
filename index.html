@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout V13.5.4 - Smart Spot Discovery</title>
+    <title>DroneScout V13.7 - Smart Spot Discovery</title>
     <!-- Build: 2025-10-31-23:50 UTC - FORCE RELOAD -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -949,6 +949,182 @@
             margin-bottom: 20px;
         }
 
+        /* V13.7: Media Viewer Styles */
+        #mediaViewerModal {
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 2000;
+        }
+
+        .media-viewer-overlay {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+
+        .media-viewer-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            font-size: 40px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .media-viewer-close:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: rotate(90deg);
+        }
+
+        .media-viewer-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            font-size: 48px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            padding: 0;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .media-viewer-nav:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        .media-viewer-nav:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .media-viewer-prev {
+            left: 20px;
+        }
+
+        .media-viewer-next {
+            right: 20px;
+        }
+
+        .media-viewer-content {
+            max-width: 90vw;
+            max-height: 80vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .media-viewer-content video,
+        .media-viewer-content img {
+            max-width: 100%;
+            max-height: 80vh;
+            border-radius: 8px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .media-viewer-content video {
+            background: #000;
+        }
+
+        .media-viewer-info {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 20px;
+            font-size: 14px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .media-viewer-counter {
+            font-weight: 600;
+            color: #64b5f6;
+        }
+
+        .media-viewer-filename {
+            opacity: 0.9;
+        }
+
+        .media-viewer-loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 16px;
+        }
+
+        /* Mobile optimizations for media viewer */
+        @media (max-width: 768px) {
+            .media-viewer-close {
+                top: 10px;
+                right: 10px;
+                width: 44px;
+                height: 44px;
+                font-size: 32px;
+            }
+
+            .media-viewer-nav {
+                width: 50px;
+                height: 50px;
+                font-size: 36px;
+            }
+
+            .media-viewer-prev {
+                left: 10px;
+            }
+
+            .media-viewer-next {
+                right: 10px;
+            }
+
+            .media-viewer-content {
+                max-width: 95vw;
+                max-height: 75vh;
+            }
+
+            .media-viewer-info {
+                bottom: 15px;
+                padding: 8px 16px;
+                font-size: 12px;
+                gap: 12px;
+                max-width: 90vw;
+                text-overflow: ellipsis;
+                overflow: hidden;
+                white-space: nowrap;
+            }
+        }
+
         .star-rating {
             display: flex;
             gap: 8px;
@@ -1046,7 +1222,7 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout V13.5.4</h1>
+            <h1>🚁 DroneScout V13.7</h1>
             <p>Plan • Discover • Map • Assess • Fly • Sync • Analyze</p>
         </div>
 
@@ -1077,6 +1253,21 @@
         <div class="modal-content">
             <div class="modal-header">Save Flight Plan</div>
             <div id="savePlanContent"></div>
+        </div>
+    </div>
+
+    <!-- V13.7: Media Viewer Modal -->
+    <div class="modal" id="mediaViewerModal">
+        <div class="media-viewer-overlay">
+            <button class="media-viewer-close" onclick="closeMediaViewer()">&times;</button>
+            <button class="media-viewer-nav media-viewer-prev" onclick="navigateMedia(-1)">&#8249;</button>
+            <button class="media-viewer-nav media-viewer-next" onclick="navigateMedia(1)">&#8250;</button>
+            <div class="media-viewer-content" id="mediaViewerContent">
+                <!-- Media content will be inserted here -->
+            </div>
+            <div class="media-viewer-info" id="mediaViewerInfo">
+                <!-- Media info (counter, filename) will be inserted here -->
+            </div>
         </div>
     </div>
 
@@ -4813,9 +5004,11 @@
                                 ${photos.map((photo, idx) => {
                                     const ext = photo.fileName ? photo.fileName.split('.').pop() : 'jpg';
                                     const customFilename = `${baseFilename}-photo-${idx + 1}.${ext}`;
+                                    const allMedia = [...photos, ...videos];
+                                    const mediaIndex = idx;
                                     return `
                                     <div style="position: relative; background: #e9ecef; border-radius: 6px; overflow: hidden; aspect-ratio: 16/9;">
-                                        <a href="${photo.downloadUrl}" target="_blank" style="display: block; width: 100%; height: 100%; position: relative;">
+                                        <div onclick="openMediaViewer(${idx}, 'photo', '${flight.id}')" style="display: block; width: 100%; height: 100%; position: relative; cursor: pointer;">
                                             ${photo.thumbnailUrl ? `
                                                 <img src="${photo.thumbnailUrl}" alt="Photo thumbnail" style="width: 100%; height: 100%; object-fit: cover;" />
                                             ` : `
@@ -4826,8 +5019,11 @@
                                                     </div>
                                                 </div>
                                             `}
-                                        </a>
-                                        <div style="position: absolute; top: 4px; right: 4px;">
+                                            <div style="position: absolute; bottom: 4px; left: 4px; background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+                                                👁️ View
+                                            </div>
+                                        </div>
+                                        <div style="position: absolute; top: 4px; right: 4px;" onclick="event.stopPropagation();">
                                             <a href="${photo.downloadUrl}" download="${customFilename}" style="background: rgba(0,0,0,0.7); color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; text-decoration: none;">
                                                 ⬇️
                                             </a>
@@ -4856,9 +5052,14 @@
                                                 ${(video.sizeBytes / 1024 / 1024).toFixed(1)}MB
                                             </div>
                                         </div>
-                                        <a href="${video.downloadUrl}" download="${customFilename}" target="_blank" class="btn-small" style="margin: 0;">
-                                            ⬇️ Download
-                                        </a>
+                                        <div style="display: flex; gap: 8px;">
+                                            <button onclick="openMediaViewer(${idx}, 'video', '${flight.id}')" class="btn-small" style="margin: 0; background: #2a5298;">
+                                                ▶️ View
+                                            </button>
+                                            <a href="${video.downloadUrl}" download="${customFilename}" target="_blank" class="btn-small" style="margin: 0;">
+                                                ⬇️ Download
+                                            </a>
+                                        </div>
                                     </div>
                                 `}).join('')}
                             </div>
@@ -4914,6 +5115,255 @@
                 }
 
                 return html;
+            }
+
+            // V13.7: Media Viewer Functions
+            let currentMediaIndex = 0;
+            let currentMediaType = 'photo'; // 'photo' or 'video'
+            let currentFlightId = null;
+            let currentMediaArray = [];
+
+            function openMediaViewer(index, mediaType, flightId) {
+                // Find the flight
+                const flight = state.flights.find(f => f.id === flightId);
+                if (!flight || !flight.mediaDetails) {
+                    console.error('Flight or media not found');
+                    return;
+                }
+
+                // Filter media by type
+                const photos = flight.mediaDetails.filter(m =>
+                    m.fileType && (m.fileType.includes('Image') || m.fileType === 'PHOTO')
+                );
+                const videos = flight.mediaDetails.filter(m =>
+                    m.fileType && (m.fileType.includes('Video') || m.fileType === 'VIDEO')
+                );
+
+                // Set current media array based on type
+                currentMediaArray = mediaType === 'photo' ? photos : videos;
+                currentMediaIndex = index;
+                currentMediaType = mediaType;
+                currentFlightId = flightId;
+
+                // Render the media
+                renderMediaInViewer();
+
+                // Show modal
+                const modal = document.getElementById('mediaViewerModal');
+                modal.classList.add('active');
+
+                // Prevent body scroll
+                document.body.style.overflow = 'hidden';
+
+                // Update navigation button states
+                updateNavButtons();
+            }
+
+            function closeMediaViewer() {
+                const modal = document.getElementById('mediaViewerModal');
+                modal.classList.remove('active');
+
+                // Stop any playing videos
+                const videoElements = document.querySelectorAll('#mediaViewerContent video');
+                videoElements.forEach(v => {
+                    v.pause();
+                    v.src = '';
+                });
+
+                // Clear content
+                document.getElementById('mediaViewerContent').innerHTML = '';
+                document.getElementById('mediaViewerInfo').innerHTML = '';
+
+                // Restore body scroll
+                document.body.style.overflow = '';
+
+                // Reset state
+                currentMediaArray = [];
+                currentMediaIndex = 0;
+            }
+
+            function navigateMedia(direction) {
+                // Calculate new index with wrapping
+                currentMediaIndex = (currentMediaIndex + direction + currentMediaArray.length) % currentMediaArray.length;
+
+                // Render new media
+                renderMediaInViewer();
+
+                // Update button states
+                updateNavButtons();
+            }
+
+            function renderMediaInViewer() {
+                const mediaItem = currentMediaArray[currentMediaIndex];
+                const content = document.getElementById('mediaViewerContent');
+                const info = document.getElementById('mediaViewerInfo');
+
+                if (!mediaItem) {
+                    content.innerHTML = '<div class="media-viewer-loading">Media not found</div>';
+                    return;
+                }
+
+                // Show loading state
+                content.innerHTML = '<div class="media-viewer-loading"><span class="spinner"></span> Loading...</div>';
+
+                // Render based on media type
+                if (currentMediaType === 'video') {
+                    content.innerHTML = `
+                        <video controls autoplay style="max-width: 100%; max-height: 80vh; border-radius: 8px; box-shadow: 0 4px 30px rgba(0,0,0,0.5); background: #000;">
+                            <source src="${mediaItem.downloadUrl}" type="video/mp4">
+                            Your browser doesn't support video playback.
+                        </video>
+                    `;
+
+                    // Add loading and error handlers
+                    const video = content.querySelector('video');
+                    video.addEventListener('loadstart', () => {
+                        console.log('Video loading started');
+                    });
+                    video.addEventListener('canplay', () => {
+                        // Hide loading spinner when video is ready
+                        const loader = content.querySelector('.media-viewer-loading');
+                        if (loader) loader.remove();
+                    });
+                    video.addEventListener('error', (e) => {
+                        content.innerHTML = `
+                            <div style="text-align: center; color: white; padding: 40px;">
+                                <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+                                <div style="font-size: 18px; margin-bottom: 8px;">Failed to load video</div>
+                                <div style="font-size: 14px; opacity: 0.7; margin-bottom: 16px;">The video URL may have expired (1-hour limit)</div>
+                                <a href="${mediaItem.downloadUrl}" download="${mediaItem.fileName}" class="btn" style="display: inline-block;">
+                                    Download Instead
+                                </a>
+                            </div>
+                        `;
+                    });
+                } else {
+                    // Photo
+                    content.innerHTML = `
+                        <img src="${mediaItem.downloadUrl}" alt="${mediaItem.fileName}" style="max-width: 100%; max-height: 80vh; border-radius: 8px; box-shadow: 0 4px 30px rgba(0,0,0,0.5);">
+                    `;
+
+                    // Add load and error handlers
+                    const img = content.querySelector('img');
+                    img.addEventListener('load', () => {
+                        const loader = content.querySelector('.media-viewer-loading');
+                        if (loader) loader.remove();
+                    });
+                    img.addEventListener('error', () => {
+                        content.innerHTML = `
+                            <div style="text-align: center; color: white; padding: 40px;">
+                                <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+                                <div style="font-size: 18px; margin-bottom: 8px;">Failed to load image</div>
+                                <div style="font-size: 14px; opacity: 0.7; margin-bottom: 16px;">The image URL may have expired (1-hour limit)</div>
+                                <a href="${mediaItem.downloadUrl}" download="${mediaItem.fileName}" class="btn" style="display: inline-block;">
+                                    Download Instead
+                                </a>
+                            </div>
+                        `;
+                    });
+                }
+
+                // Update info bar
+                const counter = `${currentMediaIndex + 1} of ${currentMediaArray.length}`;
+                const filename = mediaItem.fileName || 'Unknown file';
+                const typeLabel = currentMediaType === 'video' ? '🎥 Video' : '📷 Photo';
+
+                info.innerHTML = `
+                    <span class="media-viewer-counter">${counter}</span>
+                    <span class="media-viewer-filename">${typeLabel}: ${filename}</span>
+                `;
+            }
+
+            function updateNavButtons() {
+                const prevBtn = document.querySelector('.media-viewer-prev');
+                const nextBtn = document.querySelector('.media-viewer-next');
+
+                // Hide buttons if only one item
+                if (currentMediaArray.length <= 1) {
+                    prevBtn.style.display = 'none';
+                    nextBtn.style.display = 'none';
+                } else {
+                    prevBtn.style.display = 'flex';
+                    nextBtn.style.display = 'flex';
+                }
+            }
+
+            // V13.7: Keyboard controls for media viewer
+            document.addEventListener('keydown', (e) => {
+                const modal = document.getElementById('mediaViewerModal');
+                if (!modal.classList.contains('active')) return;
+
+                switch(e.key) {
+                    case 'Escape':
+                        closeMediaViewer();
+                        break;
+                    case 'ArrowLeft':
+                        if (currentMediaArray.length > 1) {
+                            navigateMedia(-1);
+                        }
+                        break;
+                    case 'ArrowRight':
+                        if (currentMediaArray.length > 1) {
+                            navigateMedia(1);
+                        }
+                        break;
+                    case ' ':
+                        // Toggle play/pause for videos
+                        e.preventDefault();
+                        const video = document.querySelector('#mediaViewerContent video');
+                        if (video) {
+                            if (video.paused) {
+                                video.play();
+                            } else {
+                                video.pause();
+                            }
+                        }
+                        break;
+                }
+            });
+
+            // V13.7: Click outside to close
+            document.addEventListener('click', (e) => {
+                const modal = document.getElementById('mediaViewerModal');
+                if (e.target === modal) {
+                    closeMediaViewer();
+                }
+            });
+
+            // V13.7: Touch gestures for mobile swipe navigation
+            let touchStartX = 0;
+            let touchEndX = 0;
+
+            document.addEventListener('touchstart', (e) => {
+                const modal = document.getElementById('mediaViewerModal');
+                if (!modal.classList.contains('active')) return;
+
+                touchStartX = e.changedTouches[0].screenX;
+            });
+
+            document.addEventListener('touchend', (e) => {
+                const modal = document.getElementById('mediaViewerModal');
+                if (!modal.classList.contains('active')) return;
+
+                touchEndX = e.changedTouches[0].screenX;
+                handleSwipe();
+            });
+
+            function handleSwipe() {
+                const swipeThreshold = 50; // minimum distance for swipe
+                const diff = touchStartX - touchEndX;
+
+                if (Math.abs(diff) < swipeThreshold) return; // Not a swipe
+
+                if (currentMediaArray.length <= 1) return; // Nothing to navigate
+
+                if (diff > 0) {
+                    // Swiped left - go to next
+                    navigateMedia(1);
+                } else {
+                    // Swiped right - go to previous
+                    navigateMedia(-1);
+                }
             }
 
             // OLD COMPLEX FUNCTION - REMOVED
