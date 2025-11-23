@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DroneScout V13.7 - Smart Spot Discovery</title>
+    <title>DroneScout V13.8 - Smart Spot Discovery</title>
     <!-- Build: 2025-10-31-23:50 UTC - FORCE RELOAD -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -1222,7 +1222,7 @@
 <body>
     <div class="app-container">
         <div class="header">
-            <h1>🚁 DroneScout V13.7</h1>
+            <h1>🚁 DroneScout V13.8</h1>
             <p>Plan • Discover • Map • Assess • Fly • Sync • Analyze</p>
         </div>
 
@@ -1288,6 +1288,8 @@
                 upcomingFlights: loadFromStorage('upcomingFlights') || [],
                 flights: loadFromStorage('flights') || [],
                 ratings: loadFromStorage('ratings') || [],
+                // V13.8: Flight type filter (all, real, simulator)
+                flightFilter: 'all',
                 // V10.0: Preferences always default to 50-50 (don't persist between sessions)
                 preferences: {
                     cityscape: 50,
@@ -4745,6 +4747,20 @@
                 });
             }
 
+            // V13.8: Determine flight type (real or simulator) from drone model
+            function getFlightType(flight) {
+                // Check vehicle_serial in metadata first, then name
+                const model = (flight.metadata?.vehicle_serial || flight.name || '').toLowerCase();
+                // Simulator flights have "sim-" prefix in vehicle serial
+                return model.includes('sim-') || model.includes('sim_') ? 'simulator' : 'real';
+            }
+
+            // V13.8: Filter flights by type
+            function getFilteredFlights(flights, filterType) {
+                if (filterType === 'all') return flights;
+                return flights.filter(f => getFlightType(f) === filterType);
+            }
+
             // Generate descriptive flight name with drone model, time of day, location, and duration
             function generateFlightName(flight) {
                 const date = new Date(flight.created_at || flight.date);
@@ -5376,6 +5392,19 @@
                 const flightId = trigger.dataset.flightId;
 
                 openMediaViewer(index, type, flightId);
+            });
+
+            // V13.8: Event delegation for flight filter buttons
+            document.addEventListener('click', (e) => {
+                const filterBtn = e.target.closest('.filter-btn');
+                if (!filterBtn) return;
+
+                const filterType = filterBtn.dataset.filter;
+                if (filterType && ['all', 'real', 'simulator'].includes(filterType)) {
+                    state.flightFilter = filterType;
+                    render();
+                    console.log('Flight filter changed to:', filterType);
+                }
             });
 
             // OLD COMPLEX FUNCTION - REMOVED
@@ -6851,10 +6880,24 @@
                     </div>
 
                     ${state.flights.length > 0 ? `
-                        <h2 style="font-size: 18px; font-weight: 700; color: #1e3c72; margin-bottom: 15px;">
-                            Flight History (${state.flights.length})
-                        </h2>
-                        ${state.flights.slice().sort((a, b) => {
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                            <h2 style="font-size: 18px; font-weight: 700; color: #1e3c72; margin: 0;">
+                                Flight History (${getFilteredFlights(state.flights, state.flightFilter).length}${state.flightFilter !== 'all' ? ` of ${state.flights.length}` : ''})
+                            </h2>
+                            <!-- V13.8: Flight Type Filter -->
+                            <div style="display: flex; gap: 6px;">
+                                <button class="filter-btn ${state.flightFilter === 'all' ? 'active' : ''}" data-filter="all" style="padding: 6px 12px; border-radius: 16px; border: 1px solid #1e3c72; background: ${state.flightFilter === 'all' ? '#1e3c72' : 'white'}; color: ${state.flightFilter === 'all' ? 'white' : '#1e3c72'}; font-size: 12px; font-weight: 600; cursor: pointer;">
+                                    All
+                                </button>
+                                <button class="filter-btn ${state.flightFilter === 'real' ? 'active' : ''}" data-filter="real" style="padding: 6px 12px; border-radius: 16px; border: 1px solid #28a745; background: ${state.flightFilter === 'real' ? '#28a745' : 'white'}; color: ${state.flightFilter === 'real' ? 'white' : '#28a745'}; font-size: 12px; font-weight: 600; cursor: pointer;">
+                                    Real
+                                </button>
+                                <button class="filter-btn ${state.flightFilter === 'simulator' ? 'active' : ''}" data-filter="simulator" style="padding: 6px 12px; border-radius: 16px; border: 1px solid #6c757d; background: ${state.flightFilter === 'simulator' ? '#6c757d' : 'white'}; color: ${state.flightFilter === 'simulator' ? 'white' : '#6c757d'}; font-size: 12px; font-weight: 600; cursor: pointer;">
+                                    Simulator
+                                </button>
+                            </div>
+                        </div>
+                        ${getFilteredFlights(state.flights, state.flightFilter).slice().sort((a, b) => {
                             // Sort by date descending (newest first)
                             const dateA = new Date(a.created_at || a.date);
                             const dateB = new Date(b.created_at || b.date);

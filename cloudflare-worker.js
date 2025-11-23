@@ -49,6 +49,12 @@ export default {
         return await debugFlightsResponse(env.SKYDIO_API_TOKEN);
       }
 
+      // V13.7.3: Debug endpoint to see ALL flights regardless of status
+      // Helps identify why some flights might be missing (non-completed status)
+      if (path === '/debug-all-flights' && request.method === 'GET') {
+        return await debugAllFlightsStatuses(env.SKYDIO_API_TOKEN);
+      }
+
       const flightDetailMatch = path.match(/^\/flight\/([^\/]+)\/details$/);
       if (flightDetailMatch && request.method === 'GET') {
         return await handleFlightDetails(flightDetailMatch[1], env.SKYDIO_API_TOKEN);
@@ -295,6 +301,8 @@ async function handleSyncFlights(apiToken) {
         lon: flight.takeoff_longitude,
       },
       media_urls: [], // Will be populated by separate media fetch
+      // V13.7.3: Include status for debugging and filtering
+      status: flight.status || 'completed',
       // Additional metadata for future use
       metadata: {
         vehicle_serial: flight.vehicle_serial,
@@ -371,6 +379,65 @@ async function debugFlightsResponse(apiToken) {
     first_flight_keys: data.data?.flights?.[0] ? Object.keys(data.data.flights[0]) : [],
     // Show any extra fields that might contain pagination
     all_top_level_keys: Object.keys(data),
+  });
+}
+
+/**
+ * V13.7.3: Debug endpoint to see ALL flights regardless of status
+ * Helps identify why 7 flights might be missing from sync
+ * Returns status breakdown and sample flights per status
+ */
+async function debugAllFlightsStatuses(apiToken) {
+  // Fetch WITHOUT status filter to see all flights
+  const apiUrl = `${SKYDIO_API_BASE}/api/v0/flights?page=1&per_page=100`;
+
+  const response = await fetch(apiUrl, {
+    headers: {
+      'Authorization': apiToken,
+      'Accept': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    return jsonResponse({ error: errorBody, status: response.status }, response.status);
+  }
+
+  const data = await response.json();
+  const flights = data.data?.flights || [];
+  const pagination = data.data?.pagination || {};
+
+  // Count flights by status
+  const statusCounts = {};
+  const samplesByStatus = {};
+
+  flights.forEach(flight => {
+    const status = flight.status || 'unknown';
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+
+    // Keep first 3 samples of each status
+    if (!samplesByStatus[status]) {
+      samplesByStatus[status] = [];
+    }
+    if (samplesByStatus[status].length < 3) {
+      samplesByStatus[status].push({
+        flight_id: flight.flight_id,
+        vehicle_serial: flight.vehicle_serial,
+        takeoff: flight.takeoff,
+        landing: flight.landing,
+        status: flight.status
+      });
+    }
+  });
+
+  return jsonResponse({
+    success: true,
+    message: 'Flight status breakdown (page 1 only)',
+    pagination: pagination,
+    totalFlightsOnPage: flights.length,
+    statusBreakdown: statusCounts,
+    samplesByStatus: samplesByStatus,
+    note: 'The sync endpoint uses status=completed filter. Non-completed flights are excluded.'
   });
 }
 
