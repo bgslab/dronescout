@@ -44,6 +44,11 @@ export default {
         return await handleSyncFlights(env.SKYDIO_API_TOKEN);
       }
 
+      // Debug endpoint to inspect raw Skydio API response structure
+      if (path === '/debug-flights' && request.method === 'GET') {
+        return await debugFlightsResponse(env.SKYDIO_API_TOKEN);
+      }
+
       const flightDetailMatch = path.match(/^\/flight\/([^\/]+)\/details$/);
       if (flightDetailMatch && request.method === 'GET') {
         return await handleFlightDetails(flightDetailMatch[1], env.SKYDIO_API_TOKEN);
@@ -231,15 +236,19 @@ export default {
  */
 async function handleSyncFlights(apiToken) {
   const allFlights = [];
-  let page = 1;
-  let hasMore = true;
+  let currentPage = 1;
+  let totalPages = 1;
+  const MAX_PAGES = 20; // Safety limit
 
-  while (hasMore) {
-    // Organization API tokens use v0 endpoint with direct token auth (no Bearer prefix)
-    const apiUrl = `${SKYDIO_API_BASE}/api/v0/flights?status=completed&page=${page}&page_size=50`;
+  while (currentPage <= totalPages && currentPage <= MAX_PAGES) {
+    // V13.7.2: Use page-based pagination with per_page to reduce page churn
+    // Skydio v0 API returns: pagination: { current_page, max_per_page, total_pages }
+    const apiUrl = `${SKYDIO_API_BASE}/api/v0/flights?status=completed&page=${currentPage}&per_page=100`;
+
     console.log('Fetching flights (v0):', {
       url: apiUrl,
-      page: page,
+      currentPage: currentPage,
+      totalPages: totalPages,
       tokenLength: apiToken ? apiToken.length : 0,
       tokenPrefix: apiToken ? apiToken.substring(0, 8) + '...' : 'N/A'
     });
@@ -257,14 +266,14 @@ async function handleSyncFlights(apiToken) {
         status: response.status,
         statusText: response.statusText,
         body: errorBody,
-        page: page
+        pageCount: pageCount
       });
       throw new Error(`Skydio API error: ${response.status} ${response.statusText} - ${errorBody}`);
     }
 
     const data = await response.json();
 
-    // v0 API response structure: { data: { flights: [...] }, meta: {...}, status_code: 200 }
+    // v0 API response structure: { data: { flights: [...], pagination: {...} }, meta: {...}, status_code: 200 }
     if (!data.data || !data.data.flights) {
       console.error('Unexpected API response structure:', { dataKeys: Object.keys(data) });
       throw new Error('Invalid API response: missing data.flights');
@@ -301,19 +310,67 @@ async function handleSyncFlights(apiToken) {
 
     allFlights.push(...flights);
 
-    // v0 API doesn't return has_more; stop after getting results or if empty
-    // For now, fetch just the first page (50 flights)
-    // TODO: Implement proper pagination when we understand v0 pagination structure
-    hasMore = false;
+    // V13.7.2: Get pagination info from response
+    // Format: pagination: { current_page, max_per_page: 25, total_pages }
+    const pagination = data.data?.pagination || {};
+    totalPages = pagination.total_pages || 1;
 
-    console.log(`Fetched ${flights.length} flights from page ${page}`);
+    console.log(`Fetched ${flights.length} flights (page ${currentPage}/${totalPages}), total so far: ${allFlights.length}`);
+
+    currentPage++;
   }
+
+  if (currentPage > MAX_PAGES) {
+    console.warn(`Hit max page limit (${MAX_PAGES}), may have more flights`);
+  }
+
+  // V13.7.2: Dedupe by flight_id to handle pagination overlap
+  // Skydio's offset pagination can return duplicates across pages
+  const uniqueFlights = [...new Map(allFlights.map(f => [f.id, f])).values()];
+  console.log(`Deduped ${allFlights.length} flights to ${uniqueFlights.length} unique flights`);
 
   return jsonResponse({
     success: true,
-    count: allFlights.length,
-    flights: allFlights,
+    count: uniqueFlights.length,
+    flights: uniqueFlights,
     syncedAt: new Date().toISOString(),
+    pagesLoaded: currentPage - 1,
+    totalPages: totalPages,
+    rawCount: allFlights.length, // For debugging
+  });
+}
+
+/**
+ * Debug endpoint to inspect raw Skydio API response structure
+ * Helps identify the correct pagination fields
+ */
+async function debugFlightsResponse(apiToken) {
+  const apiUrl = `${SKYDIO_API_BASE}/api/v0/flights?status=completed&limit=5`;
+
+  const response = await fetch(apiUrl, {
+    headers: {
+      'Authorization': apiToken,
+      'Accept': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    return jsonResponse({ error: errorBody, status: response.status }, response.status);
+  }
+
+  const data = await response.json();
+
+  // Return the structure without the full flight data (to keep response small)
+  return jsonResponse({
+    status_code: data.status_code,
+    meta: data.meta,
+    data_keys: data.data ? Object.keys(data.data) : [],
+    pagination: data.data?.pagination,
+    flights_count: data.data?.flights?.length || 0,
+    first_flight_keys: data.data?.flights?.[0] ? Object.keys(data.data.flights[0]) : [],
+    // Show any extra fields that might contain pagination
+    all_top_level_keys: Object.keys(data),
   });
 }
 
