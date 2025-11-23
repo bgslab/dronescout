@@ -247,10 +247,10 @@ async function handleSyncFlights(apiToken) {
   const MAX_PAGES = 20; // Safety limit
 
   while (currentPage <= totalPages && currentPage <= MAX_PAGES) {
-    // V13.8.1: Remove status filter to get ALL flights (including non-completed)
-    // Previously filtered to status=completed which missed 7 flights
+    // V13.8.2: Add stable sort to reduce pagination overlap (per Skydio AI recommendation)
+    // Sort by takeoff descending for consistent ordering across pages
     // Skydio v0 API returns: pagination: { current_page, max_per_page, total_pages }
-    const apiUrl = `${SKYDIO_API_BASE}/api/v0/flights?page=${currentPage}&per_page=100`;
+    const apiUrl = `${SKYDIO_API_BASE}/api/v0/flights?page=${currentPage}&per_page=100&sort=-takeoff`;
 
     console.log('Fetching flights (v0):', {
       url: apiUrl,
